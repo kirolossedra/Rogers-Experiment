@@ -349,6 +349,7 @@
         let files = [];
         let plots = [];
         let charts = [];
+        let iperfFiles = {};
 
         // Initialize with default time slices
         addTimeSlice('14:42:58', '14:44:47');
@@ -427,18 +428,18 @@
             
             try {
                 const content = await file.text();
+                iperfFiles[file.name] = content;
+                
                 const lines = content.split('\n');
                 
                 let firstTime = null;
                 let lastTime = null;
                 
-                // Look for lines with time format and 0.00-1.00 sec pattern
                 for (let line of lines) {
-                    // Match pattern like: Mon Nov  3 16:46:43 2025 [  6]   0.00-1.00   sec
                     const match = line.match(/[A-Za-z]{3}\s+[A-Za-z]{3}\s+\d+\s+(\d{2}:\d{2}:\d{2})\s+\d{4}.*?\d+\.\d+-\d+\.\d+\s+sec/);
                     
                     if (match) {
-                        const time = match[1]; // Extract HH:MM:SS
+                        const time = match[1];
                         if (!firstTime) {
                             firstTime = time;
                         }
@@ -455,6 +456,31 @@
             } catch (e) {
                 showStatus('Error reading slice file: ' + e.message, 'error');
             }
+        }
+
+        function parseIperfFile(content) {
+            const lines = content.split('\n');
+            const data = [];
+            
+            for (let line of lines) {
+                const match = line.match(/[A-Za-z]{3}\s+[A-Za-z]{3}\s+\d+\s+(\d{2}:\d{2}:\d{2})\s+\d{4}.*?\d+\.\d+-\d+\.\d+\s+sec\s+[\d.]+\s+[A-Za-z]+\s+([\d.]+)\s+Mbits/);
+                
+                if (match) {
+                    const time = match[1];
+                    const mbps = parseFloat(match[2]);
+                    
+                    const [h, m, s] = time.split(':').map(Number);
+                    const mockDate = new Date(2000, 0, 1, h, m, s);
+                    
+                    data.push({
+                        time: mockDate,
+                        timeStr: time,
+                        mbps: mbps
+                    });
+                }
+            }
+            
+            return data;
         }
 
         function updateFileList() {
@@ -565,7 +591,6 @@
             
             showStatus('Processing logs...', 'info');
             
-            // Parse all files
             const fileData = {};
             
             for (let file of files) {
@@ -585,9 +610,19 @@
                 return;
             }
             
-            // Generate plots for each time slice
+            const iperfData = {};
+            for (let filename in iperfFiles) {
+                const data = parseIperfFile(iperfFiles[filename]);
+                if (data.length > 0) {
+                    iperfData[filename] = data;
+                }
+            }
+            
             plots = [];
             const colors = ['#2c5282', '#38a169', '#d69e2e', '#c53030', '#805ad5', '#319795', '#dd6b20', '#e53e3e'];
+            
+            const apNames = {};
+            let apCounter = 1;
             
             for (let i = 0; i < timeSlices.length; i++) {
                 const slice = timeSlices[i];
@@ -608,23 +643,58 @@
                     
                     if (filtered.length > 0) {
                         hasData = true;
+                        
+                        if (!apNames[filename]) {
+                            apNames[filename] = `AP${apCounter}`;
+                            apCounter++;
+                        }
+                        
                         const points = filtered.map(d => ({
-                            x: d.time.toLocaleTimeString(),
+                            x: d.time.toTimeString().split(' ')[0],
                             y: d.present
                         }));
                         
                         datasets.push({
-                            label: filename,
+                            label: apNames[filename],
                             data: points,
                             borderColor: colors[idx % colors.length],
                             backgroundColor: colors[idx % colors.length] + '40',
                             stepped: 'after',
                             pointRadius: 0,
                             pointHoverRadius: 4,
-                            borderWidth: 2.5
+                            borderWidth: 2.5,
+                            yAxisID: 'y'
                         });
                     }
                 });
+                
+                for (let filename in iperfData) {
+                    const data = iperfData[filename];
+                    const filtered = data.filter(d => {
+                        const t = d.time.getHours() * 3600 + d.time.getMinutes() * 60 + d.time.getSeconds();
+                        return t >= startTotal && t <= endTotal;
+                    });
+                    
+                    if (filtered.length > 0) {
+                        hasData = true;
+                        
+                        const points = filtered.map(d => ({
+                            x: d.timeStr,
+                            y: d.mbps
+                        }));
+                        
+                        datasets.push({
+                            label: `Throughput (${filename})`,
+                            data: points,
+                            borderColor: '#e63946',
+                            backgroundColor: '#e6394620',
+                            pointRadius: 2,
+                            pointHoverRadius: 5,
+                            borderWidth: 2,
+                            yAxisID: 'y1'
+                        });
+                    }
+                }
                 
                 if (hasData) {
                     plots.push({
@@ -648,7 +718,6 @@
             const container = document.getElementById('plotsContainer');
             container.innerHTML = '';
             
-            // Destroy old charts
             charts.forEach(chart => chart.destroy());
             charts = [];
             
@@ -666,7 +735,6 @@
                 `;
                 container.appendChild(plotItem);
                 
-                // Create chart
                 const ctx = document.getElementById(`plotCanvas${index}`).getContext('2d');
                 
                 const chart = new Chart(ctx, {
@@ -675,10 +743,14 @@
                     options: {
                         responsive: true,
                         maintainAspectRatio: false,
+                        interaction: {
+                            mode: 'index',
+                            intersect: false
+                        },
                         plugins: {
                             title: {
                                 display: true,
-                                text: `IP ${plot.targetIP} Presence`,
+                                text: `IP ${plot.targetIP} Presence & Throughput`,
                                 font: { size: 14, weight: 'bold' }
                             },
                             legend: {
@@ -687,6 +759,9 @@
                         },
                         scales: {
                             y: {
+                                type: 'linear',
+                                display: true,
+                                position: 'left',
                                 min: -0.1,
                                 max: 1.5,
                                 ticks: {
@@ -699,6 +774,19 @@
                                     display: true,
                                     text: 'Connection Status',
                                     font: { weight: 'bold' }
+                                }
+                            },
+                            y1: {
+                                type: 'linear',
+                                display: true,
+                                position: 'right',
+                                title: {
+                                    display: true,
+                                    text: 'Throughput (Mbps)',
+                                    font: { weight: 'bold' }
+                                },
+                                grid: {
+                                    drawOnChartArea: false
                                 }
                             },
                             x: {
@@ -730,4 +818,3 @@
     </script>
 </body>
 </html>
-
