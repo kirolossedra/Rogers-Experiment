@@ -692,11 +692,11 @@
                                 data: ackSNRPoints,
                                 borderColor: colors[idx % colors.length],
                                 backgroundColor: colors[idx % colors.length] + '20',
-                                pointRadius: 3,
-                                pointHoverRadius: 6,
-                                borderWidth: 2,
+                                pointRadius: 0,
+                                pointHoverRadius: 5,
+                                borderWidth: 2.5,
                                 yAxisID: 'y1',
-                                tension: 0.3
+                                tension: 0.4
                             });
                         }
 
@@ -715,12 +715,12 @@
                                 data: rxSNRPoints,
                                 borderColor: colors[idx % colors.length],
                                 backgroundColor: colors[idx % colors.length] + '60',
-                                pointRadius: 3,
-                                pointHoverRadius: 6,
-                                borderWidth: 2,
+                                pointRadius: 0,
+                                pointHoverRadius: 5,
+                                borderWidth: 2.5,
                                 borderDash: [5, 5],
                                 yAxisID: 'y1',
-                                tension: 0.3
+                                tension: 0.4
                             });
                         }
                     }
