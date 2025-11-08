@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Log Analyzer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', 'Roboto', 'Arial', sans-serif;
+            background: #1a1f2e;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            overflow: hidden;
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            min-height: 90vh;
+        }
+        
+        .sidebar {
+            background: #f5f7fa;
+            padding: 30px;
+            border-right: 1px solid #d0d4db;
+            overflow-y: auto;
+        }
+        
+        .main-content {
+            padding: 30px;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+        
+        h1 {
+            font-size: 24px;
+            margin-bottom: 25px;
+            color: #2c3e50;
+            font-weight: 600;
+        }
+        
+        .section {
+            margin-bottom: 25px;
+        }
+        
+        .section-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #d0d4db;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+        
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #2c5282;
+        }
+        
+        .drop-zone {
+            border: 3px dashed #b0b8c1;
+            border-radius: 8px;
+            padding: 30px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: white;
+        }
+        
+        .drop-zone:hover, .drop-zone.dragover {
+            border-color: #2c5282;
+            background: #edf2f7;
+        }
+        
+        .drop-zone-text {
+            color: #4a5568;
+            font-size: 14px;
+        }
+
+        .drop-zone-small {
+            padding: 20px;
+            font-size: 13px;
+        }
+        
+        .file-list {
+            margin-top: 10px;
+            max-height: 120px;
+            overflow-y: auto;
+        }
+        
+        .file-item {
+            background: white;
+            padding: 8px 12px;
+            margin: 5px 0;
+            border-radius: 6px;
+            font-size: 13px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border: 1px solid #d0d4db;
+        }
+        
+        .file-item button {
+            background: #c53030;
+            color: white;
+            border: none;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        
+        .time-slices {
+            max-height: 250px;
+            overflow-y: auto;
+        }
+        
+        .time-slice {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 8px;
+            align-items: center;
+        }
+        
+        .time-slice input {
+            width: 90px;
+            padding: 6px;
+            font-size: 13px;
+        }
+        
+        .time-slice button {
+            background: #c53030;
+            color: white;
+            border: none;
+            padding: 6px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        .time-slice.from-file {
+            background: #e6f2ff;
+            padding: 8px;
+            border-radius: 6px;
+            border-left: 3px solid #2c5282;
+        }
+
+        .time-slice.from-file .slice-label {
+            font-size: 11px;
+            color: #2c5282;
+            font-weight: 600;
+        }
+        
+        .btn {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-top: 10px;
+        }
+        
+        .btn-primary {
+            background: #2c5282;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #2a4365;
+            box-shadow: 0 4px 12px rgba(44, 82, 130, 0.3);
+        }
+        
+        .btn-secondary {
+            background: #4a5568;
+            color: white;
+        }
+        
+        .status {
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 13px;
+            margin-top: 10px;
+            text-align: center;
+        }
+        
+        .status.success {
+            background: #c6f6d5;
+            color: #22543d;
+        }
+        
+        .status.error {
+            background: #fed7d7;
+            color: #742a2a;
+        }
+        
+        .status.info {
+            background: #bee3f8;
+            color: #2c5282;
+        }
+        
+        .plots-scroll-container {
+            flex: 1;
+            overflow-y: auto;
+            padding-right: 10px;
+        }
+
+        .plot-item {
+            background: #f5f7fa;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+
+        .plot-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .plot-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        .export-btn {
+            padding: 8px 16px;
+            background: #38a169;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 13px;
+        }
+
+        .export-btn:hover {
+            background: #2f855a;
+        }
+
+        .plot-canvas-wrapper {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+        }
+
+        .empty-state {
+            text-align: center;
+            color: #718096;
+            font-size: 16px;
+            padding: 60px 20px;
+            background: #f5f7fa;
+            border-radius: 8px;
+        }
+
+        canvas {
+            max-width: 100%;
+            height: 400px !important;
+        }
+
+        .results-header {
+            font-size: 20px;
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar">
+            <h1>📊 Log Analyzer</h1>
+            
+            <div class="section">
+                <div class="section-title">Target IP Address</div>
+                <input type="text" id="targetIP" value="192.168.0.220" placeholder="e.g., 192.168.0.220">
+            </div>
+            
+            <div class="section">
+                <div class="section-title">Log Files</div>
+                <div class="drop-zone" id="dropZone">
+                    <div class="drop-zone-text">
+                        📁 Drop .txt or .log files here<br>
+                        <small>or click to browse</small>
+                    </div>
+                    <input type="file" id="fileInput" multiple accept=".txt,.log" style="display: none;">
+                </div>
+                <div class="file-list" id="fileList"></div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">Add Slices from File</div>
+                <div class="drop-zone drop-zone-small" id="sliceDropZone">
+                    <div class="drop-zone-text">
+                        📄 Drop slice files here<br>
+                        <small>(iperf3 format)</small>
+                    </div>
+                    <input type="file" id="sliceFileInput" multiple accept=".txt,.log" style="display: none;">
+                </div>
+            </div>
+            
+            <div class="section">
+                <div class="section-title">Time Slices (HH:MM:SS)</div>
+                <div class="time-slices" id="timeSlices"></div>
+                <button class="btn btn-secondary" onclick="addTimeSlice()">+ Add Slice Manually</button>
+            </div>
+            
+            <button class="btn btn-primary" onclick="processLogs()">🚀 Generate Plots</button>
+            
+            <div id="status"></div>
+        </div>
+        
+        <div class="main-content">
+            <div class="results-header">Results</div>
+            <div class="plots-scroll-container" id="plotsContainer">
+                <div class="empty-state">No plots generated yet. Configure settings and click "Generate Plots".</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let files = [];
+        let plots = [];
+        let charts = [];
+        let iperfFiles = {};
+
+        // Initialize with default time slices
+        addTimeSlice('14:42:58', '14:44:47');
+        addTimeSlice('14:50:01', '14:51:46');
+        addTimeSlice('14:54:28', '14:56:22');
+
+        // File handling for log files
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+
+        dropZone.addEventListener('click', () => fileInput.click());
+        
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+        
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+        
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            handleFiles(e.dataTransfer.files);
+        });
+        
+        fileInput.addEventListener('change', (e) => {
+            handleFiles(e.target.files);
+        });
+
+        // Slice file handling
+        const sliceDropZone = document.getElementById('sliceDropZone');
+        const sliceFileInput = document.getElementById('sliceFileInput');
+
+        sliceDropZone.addEventListener('click', () => sliceFileInput.click());
+        
+        sliceDropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            sliceDropZone.classList.add('dragover');
+        });
+        
+        sliceDropZone.addEventListener('dragleave', () => {
+            sliceDropZone.classList.remove('dragover');
+        });
+        
+        sliceDropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            sliceDropZone.classList.remove('dragover');
+            handleSliceFiles(e.dataTransfer.files);
+        });
+        
+        sliceFileInput.addEventListener('change', (e) => {
+            handleSliceFiles(e.target.files);
+        });
+
+        function handleFiles(fileList) {
+            for (let file of fileList) {
+                if (file.name.endsWith('.txt') || file.name.endsWith('.log')) {
+                    files.push(file);
+                    updateFileList();
+                }
+            }
+        }
+
+        async function handleSliceFiles(fileList) {
+            for (let file of fileList) {
+                if (file.name.endsWith('.txt') || file.name.endsWith('.log')) {
+                    await handleSliceFile(file);
+                }
+            }
+        }
+
+        async function handleSliceFile(file) {
+            if (!file) return;
+            
+            try {
+                const content = await file.text();
+                iperfFiles[file.name] = content;
+                
+                const lines = content.split('\n');
+                
+                let firstTime = null;
+                let lastTime = null;
+                
+                for (let line of lines) {
+                    const match = line.match(/[A-Za-z]{3}\s+[A-Za-z]{3}\s+\d+\s+(\d{2}:\d{2}:\d{2})\s+\d{4}.*?\d+\.\d+-\d+\.\d+\s+sec/);
+                    
+                    if (match) {
+                        const time = match[1];
+                        if (!firstTime) {
+                            firstTime = time;
+                        }
+                        lastTime = time;
+                    }
+                }
+                
+                if (firstTime && lastTime) {
+                    addTimeSlice(firstTime, lastTime, file.name);
+                    showStatus(`Added slice from ${file.name}: ${firstTime} to ${lastTime}`, 'success');
+                } else {
+                    showStatus('Could not find valid time range in file', 'error');
+                }
+            } catch (e) {
+                showStatus('Error reading slice file: ' + e.message, 'error');
+            }
+        }
+
+        function updateFileList() {
+            const fileListDiv = document.getElementById('fileList');
+            fileListDiv.innerHTML = '';
+            files.forEach((file, index) => {
+                const item = document.createElement('div');
+                item.className = 'file-item';
+                item.innerHTML = `
+                    <span>${file.name}</span>
+                    <button onclick="removeFile(${index})">×</button>
+                `;
+                fileListDiv.appendChild(item);
+            });
+        }
+
+        function removeFile(index) {
+            files.splice(index, 1);
+            updateFileList();
+        }
+
+        function addTimeSlice(start = '00:00:00', end = '00:00:00', sourceFile = null) {
+            const container = document.getElementById('timeSlices');
+            const slice = document.createElement('div');
+            slice.className = sourceFile ? 'time-slice from-file' : 'time-slice';
+            
+            let label = '';
+            if (sourceFile) {
+                label = `<div class="slice-label">📄 ${sourceFile}</div>`;
+            }
+            
+            slice.innerHTML = `
+                ${label}
+                <input type="text" value="${start}" placeholder="HH:MM:SS">
+                <span>to</span>
+                <input type="text" value="${end}" placeholder="HH:MM:SS">
+                <button onclick="this.parentElement.remove()">×</button>
+            `;
+            container.appendChild(slice);
+        }
+
+        function showStatus(message, type = 'info') {
+            const status = document.getElementById('status');
+            status.className = `status ${type}`;
+            status.textContent = message;
+        }
+
+        function parseLogFile(content, targetIP) {
+            const sections = content.split('/////');
+            const data = [];
+            
+            let currentTime = null;
+            let currentTimeStr = null;
+            
+            for (let section of sections) {
+                const timeMatch = section.match(/LocalBeginTime:\s*(\d+)\s*\(([^)]+)\)/);
+                
+                if (timeMatch) {
+                    const timeStr = timeMatch[2];
+                    try {
+                        const timeClean = timeStr.split('.')[0];
+                        currentTime = new Date(timeClean);
+                        currentTimeStr = timeStr;
+                    } catch (e) {
+                        currentTime = null;
+                    }
+                }
+                
+                if (currentTime && section.includes(targetIP)) {
+                    // Extract channel and signal information
+                    const lines = section.split('\n');
+                    let channel = null;
+                    let signal = null;
+                    let signalQuality = null;
+                    
+                    for (let line of lines) {
+                        if (line.includes(targetIP)) {
+                            // Try to match signal pattern like "57(good)" or "24(poor)"
+                            const signalMatch = line.match(/(\d+)\((good|poor|fair|excellent)\)/i);
+                            if (signalMatch) {
+                                signal = parseInt(signalMatch[1]);
+                                signalQuality = signalMatch[2].toLowerCase();
+                            }
+                            
+                            // Try to match channel pattern - looking for patterns like "36E", "6", etc.
+                            // Channel typically appears before "a-HE" or "AC" type indicators
+                            const channelMatch = line.match(/\s+(\d+[A-Z]?)\s+(?:a-HE|AC|ax|n|g|a)\s+/);
+                            if (channelMatch) {
+                                channel = channelMatch[1];
+                            }
+                            break;
+                        }
+                    }
+                    
+                    data.push({ 
+                        time: currentTime, 
+                        present: 1, 
+                        timeStr: currentTimeStr,
+                        channel: channel,
+                        signal: signal,
+                        signalQuality: signalQuality,
+                        signalDisplay: signal && signalQuality ? `${signal}(${signalQuality})` : null
+                    });
+                } else if (currentTime && section.includes('Number of Clients')) {
+                    data.push({ 
+                        time: currentTime, 
+                        present: 0, 
+                        timeStr: currentTimeStr,
+                        channel: null,
+                        signal: null,
+                        signalQuality: null,
+                        signalDisplay: null
+                    });
+                }
+            }
+            
+            return data;
+        }
+
+        async function processLogs() {
+            const targetIP = document.getElementById('targetIP').value.trim();
+            
+            if (!targetIP) {
+                showStatus('Please enter a target IP address', 'error');
+                return;
+            }
+            
+            if (files.length === 0) {
+                showStatus('Please add log files', 'error');
+                return;
+            }
+            
+            const sliceElements = document.querySelectorAll('.time-slice');
+            const timeSlices = [];
+            
+            for (let elem of sliceElements) {
+                const inputs = elem.querySelectorAll('input[type="text"]');
+                const start = inputs[0].value.trim();
+                const end = inputs[1].value.trim();
+                if (start && end) {
+                    timeSlices.push({ start, end });
+                }
+            }
+            
+            if (timeSlices.length === 0) {
+                showStatus('Please add at least one time slice', 'error');
+                return;
+            }
+            
+            showStatus('Processing logs...', 'info');
+            
+            const fileData = {};
+            
+            for (let file of files) {
+                try {
+                    const content = await file.text();
+                    const data = parseLogFile(content, targetIP);
+                    if (data.length > 0) {
+                        fileData[file.name] = data;
+                    }
+                } catch (e) {
+                    console.error(`Error parsing ${file.name}:`, e);
+                }
+            }
+            
+            if (Object.keys(fileData).length === 0) {
+                showStatus('No valid data found in log files', 'error');
+                return;
+            }
+            
+            plots = [];
+            const colors = ['#2c5282', '#38a169', '#d69e2e', '#c53030', '#805ad5', '#319795', '#dd6b20', '#e53e3e'];
+            
+            const apNames = {};
+            let apCounter = 1;
+            
+            for (let i = 0; i < timeSlices.length; i++) {
+                const slice = timeSlices[i];
+                const [startH, startM, startS] = slice.start.split(':').map(Number);
+                const [endH, endM, endS] = slice.end.split(':').map(Number);
+                const startTotal = startH * 3600 + startM * 60 + startS;
+                const endTotal = endH * 3600 + endM * 60 + endS;
+                
+                const datasets = [];
+                let hasData = false;
+                
+                Object.keys(fileData).forEach((filename, idx) => {
+                    const data = fileData[filename];
+                    const filtered = data.filter(d => {
+                        const t = d.time.getHours() * 3600 + d.time.getMinutes() * 60 + d.time.getSeconds();
+                        return t >= startTotal && t <= endTotal;
+                    });
+                    
+                    if (filtered.length > 0) {
+                        hasData = true;
+                        
+                        if (!apNames[filename]) {
+                            apNames[filename] = `AP${apCounter}`;
+                            apCounter++;
+                        }
+                        
+                        // Presence dataset
+                        const presencePoints = filtered.map(d => ({
+                            x: d.time.toTimeString().split(' ')[0],
+                            y: d.present,
+                            channel: d.channel,
+                            signal: d.signalDisplay
+                        }));
+                        
+                        datasets.push({
+                            label: `${apNames[filename]} - Presence`,
+                            data: presencePoints,
+                            borderColor: colors[idx % colors.length],
+                            backgroundColor: colors[idx % colors.length] + '40',
+                            stepped: 'after',
+                            pointRadius: 0,
+                            pointHoverRadius: 4,
+                            borderWidth: 2.5,
+                            yAxisID: 'y'
+                        });
+
+                        // Signal strength dataset
+                        const signalPoints = filtered
+                            .filter(d => d.signal !== null && d.present === 1)
+                            .map(d => ({
+                                x: d.time.toTimeString().split(' ')[0],
+                                y: d.signal,
+                                channel: d.channel,
+                                signalQuality: d.signalQuality
+                            }));
+                        
+                        if (signalPoints.length > 0) {
+                            datasets.push({
+                                label: `${apNames[filename]} - Signal`,
+                                data: signalPoints,
+                                borderColor: colors[idx % colors.length],
+                                backgroundColor: colors[idx % colors.length] + '20',
+                                pointRadius: 3,
+                                pointHoverRadius: 6,
+                                borderWidth: 2,
+                                yAxisID: 'y1',
+                                tension: 0.3
+                            });
+                        }
+                    }
+                });
+                
+                if (hasData) {
+                    plots.push({
+                        title: `Slice ${i + 1}: ${slice.start} to ${slice.end}`,
+                        datasets: datasets,
+                        targetIP: targetIP,
+                        index: i
+                    });
+                }
+            }
+            
+            if (plots.length > 0) {
+                displayAllPlots();
+                showStatus(`Generated ${plots.length} plot(s)`, 'success');
+            } else {
+                showStatus('No data found in specified time slices', 'error');
+            }
+        }
+
+        function displayAllPlots() {
+            const container = document.getElementById('plotsContainer');
+            container.innerHTML = '';
+            
+            charts.forEach(chart => chart.destroy());
+            charts = [];
+            
+            plots.forEach((plot, index) => {
+                const plotItem = document.createElement('div');
+                plotItem.className = 'plot-item';
+                plotItem.innerHTML = `
+                    <div class="plot-header">
+                        <div class="plot-title">${plot.title}</div>
+                        <button class="export-btn" onclick="exportPlot(${index})">💾 Export PNG</button>
+                    </div>
+                    <div class="plot-canvas-wrapper">
+                        <canvas id="plotCanvas${index}"></canvas>
+                    </div>
+                `;
+                container.appendChild(plotItem);
+                
+                const ctx = document.getElementById(`plotCanvas${index}`).getContext('2d');
+                
+                const chart = new Chart(ctx, {
+                    type: 'line',
+                    data: { datasets: plot.datasets },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: {
+                            mode: 'index',
+                            intersect: false
+                        },
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: `IP ${plot.targetIP} - Presence & Signal Strength`,
+                                font: { size: 14, weight: 'bold' }
+                            },
+                            legend: {
+                                position: 'top'
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    afterLabel: function(context) {
+                                        const dataPoint = context.raw;
+                                        let info = [];
+                                        if (dataPoint.channel) {
+                                            info.push(`Channel: ${dataPoint.channel}`);
+                                        }
+                                        if (dataPoint.signalQuality) {
+                                            info.push(`Quality: ${dataPoint.signalQuality}`);
+                                        }
+                                        return info.length > 0 ? info.join('\n') : '';
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                type: 'linear',
+                                display: true,
+                                position: 'left',
+                                min: -0.1,
+                                max: 1.5,
+                                ticks: {
+                                    stepSize: 1,
+                                    callback: function(value) {
+                                        return value === 0 ? 'Absent' : value === 1 ? 'Present' : '';
+                                    }
+                                },
+                                title: {
+                                    display: true,
+                                    text: 'Connection Status',
+                                    font: { weight: 'bold' }
+                                }
+                            },
+                            y1: {
+                                type: 'linear',
+                                display: true,
+                                position: 'right',
+                                min: 0,
+                                max: 100,
+                                title: {
+                                    display: true,
+                                    text: 'Signal Strength (dBm)',
+                                    font: { weight: 'bold' }
+                                },
+                                grid: {
+                                    drawOnChartArea: false
+                                }
+                            },
+                            x: {
+                                type: 'category',
+                                title: {
+                                    display: true,
+                                    text: 'Time',
+                                    font: { weight: 'bold' }
+                                }
+                            }
+                        }
+                    }
+                });
+                
+                charts.push(chart);
+            });
+        }
+
+        function exportPlot(index) {
+            if (index >= charts.length) return;
+            
+            const canvas = document.getElementById(`plotCanvas${index}`);
+            const url = canvas.toDataURL('image/png');
+            const link = document.createElement('a');
+            link.download = `plot_slice_${index + 1}.png`;
+            link.href = url;
+            link.click();
+        }
+    </script>
+</body>
+</html>
