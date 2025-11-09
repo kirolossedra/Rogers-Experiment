@@ -6,6 +6,7 @@
     <title>Network Log Analyzer</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <style>
+        /* [same as before] */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: Arial, sans-serif; background: #1a1f2e; padding: 20px; }
         .container { max-width: 1400px; margin: 0 auto; background: #fff; border-radius: 8px; display: grid; grid-template-columns: 350px 1fr; min-height: 90vh; }
@@ -53,12 +54,10 @@
     <div class="container">
         <div class="sidebar">
             <h1>📊 Log Analyzer</h1>
-            
             <div class="section">
                 <div class="section-title">Target IP Address</div>
                 <input type="text" id="targetIP" value="192.168.0.201" placeholder="e.g., 192.168.0.201">
             </div>
-            
             <div class="section">
                 <div class="section-title">Log Files</div>
                 <div class="drop-zone" id="dropZone">
@@ -67,7 +66,6 @@
                 </div>
                 <div class="file-list" id="fileList"></div>
             </div>
-
             <div class="section">
                 <div class="section-title">Add Slices from File</div>
                 <div class="drop-zone drop-zone-small" id="sliceDropZone">
@@ -75,7 +73,6 @@
                     <input type="file" id="sliceFileInput" multiple accept=".txt,.log" style="display: none;">
                 </div>
             </div>
-            
             <div class="section">
                 <div class="section-title">Smoothing Window</div>
                 <input type="range" id="smoothingSlider" min="1" max="20" value="1" style="width: 100%;">
@@ -83,17 +80,14 @@
                     Window: <span id="smoothingValue">1</span> points
                 </div>
             </div>
-            
             <div class="section">
                 <div class="section-title">Time Slices (HH:MM:SS)</div>
                 <div class="time-slices" id="timeSlices"></div>
                 <button class="btn btn-secondary" onclick="addTimeSlice()">+ Add Slice Manually</button>
             </div>
-            
             <button class="btn btn-primary" onclick="processLogs()">🚀 Generate Plots</button>
             <div id="status"></div>
         </div>
-        
         <div class="main-content">
             <div class="results-header">Results</div>
             <div class="plots-scroll-container" id="plotsContainer">
@@ -138,7 +132,11 @@
                 const end = Math.min(data.length, i + Math.ceil(windowSize / 2));
                 const window = data.slice(start, end);
                 const avg = window.reduce((sum, val) => sum + val.y, 0) / window.length;
-                result.push({ x: data[i].x, y: avg });
+                result.push({ 
+                    x: data[i].x, 
+                    y: avg, 
+                    originalTime: data[i].originalTime
+                });
             }
             return result;
         }
@@ -352,8 +350,9 @@
                             apCounter++;
                         }
                         const points = filtered.map(d => ({
-                            x: d.time.toTimeString().split(' ')[0],
-                            y: d.present
+                            x: (d.time.getHours() * 3600 + d.time.getMinutes() * 60 + d.time.getSeconds()) - startTotal,
+                            y: d.present,
+                            originalTime: d.timeStr  // <-- For hover/tip
                         }));
                         const smoothedPoints = movingAverage(points, windowSize);
                         datasets.push({
@@ -381,8 +380,9 @@
                     if (filtered.length > 0) {
                         hasData = true;
                         const points = filtered.map(d => ({
-                            x: d.timeStr,
-                            y: d.mbps
+                            x: (d.time.getHours() * 3600 + d.time.getMinutes() * 60 + d.time.getSeconds()) - startTotal,
+                            y: d.mbps,
+                            originalTime: d.timeStr  // <-- For hover/tip
                         }));
                         const smoothedPoints = movingAverage(points, windowSize);
                         datasets.push({
@@ -449,6 +449,14 @@
                             },
                             legend: {
                                 position: 'top'
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    title: function(context) {
+                                        // Use the timestamp saved in data.originalTime
+                                        return "Timestamp: " + (context[0].raw.originalTime || context[0].label);
+                                    }
+                                }
                             }
                         },
                         scales: {
@@ -484,11 +492,14 @@
                                 }
                             },
                             x: {
-                                type: 'category',
+                                type: 'linear',
                                 title: {
                                     display: true,
-                                    text: 'Time',
+                                    text: 'Seconds (elapsed time)',
                                     font: { weight: 'bold' }
+                                },
+                                ticks: {
+                                    stepSize: 10
                                 }
                             }
                         }
