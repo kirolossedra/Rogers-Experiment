@@ -6,291 +6,43 @@
     <title>Network Log Analyzer</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: 'Segoe UI', 'Roboto', 'Arial', sans-serif;
-            background: #1a1f2e;
-            min-height: 100vh;
-            padding: 20px;
-        }
-        
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            background: #ffffff;
-            border-radius: 8px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-            overflow: hidden;
-            display: grid;
-            grid-template-columns: 350px 1fr;
-            min-height: 90vh;
-        }
-        
-        .sidebar {
-            background: #f5f7fa;
-            padding: 30px;
-            border-right: 1px solid #d0d4db;
-            overflow-y: auto;
-        }
-        
-        .main-content {
-            padding: 30px;
-            display: flex;
-            flex-direction: column;
-            overflow-y: auto;
-        }
-        
-        h1 {
-            font-size: 24px;
-            margin-bottom: 25px;
-            color: #2c3e50;
-            font-weight: 600;
-        }
-        
-        .section {
-            margin-bottom: 25px;
-        }
-        
-        .section-title {
-            font-size: 14px;
-            font-weight: 600;
-            color: #2c3e50;
-            margin-bottom: 10px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        
-        input[type="text"] {
-            width: 100%;
-            padding: 10px;
-            border: 2px solid #d0d4db;
-            border-radius: 6px;
-            font-size: 14px;
-            transition: border-color 0.3s;
-        }
-        
-        input[type="text"]:focus {
-            outline: none;
-            border-color: #2c5282;
-        }
-        
-        .drop-zone {
-            border: 3px dashed #b0b8c1;
-            border-radius: 8px;
-            padding: 30px;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.3s;
-            background: white;
-        }
-        
-        .drop-zone:hover, .drop-zone.dragover {
-            border-color: #2c5282;
-            background: #edf2f7;
-        }
-        
-        .drop-zone-text {
-            color: #4a5568;
-            font-size: 14px;
-        }
-
-        .drop-zone-small {
-            padding: 20px;
-            font-size: 13px;
-        }
-        
-        .file-list {
-            margin-top: 10px;
-            max-height: 120px;
-            overflow-y: auto;
-        }
-        
-        .file-item {
-            background: white;
-            padding: 8px 12px;
-            margin: 5px 0;
-            border-radius: 6px;
-            font-size: 13px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border: 1px solid #d0d4db;
-        }
-        
-        .file-item button {
-            background: #c53030;
-            color: white;
-            border: none;
-            padding: 4px 8px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 12px;
-        }
-        
-        .time-slices {
-            max-height: 250px;
-            overflow-y: auto;
-        }
-        
-        .time-slice {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 8px;
-            align-items: center;
-        }
-        
-        .time-slice input {
-            width: 90px;
-            padding: 6px;
-            font-size: 13px;
-        }
-        
-        .time-slice button {
-            background: #c53030;
-            color: white;
-            border: none;
-            padding: 6px 10px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-weight: bold;
-        }
-
-        .time-slice.from-file {
-            background: #e6f2ff;
-            padding: 8px;
-            border-radius: 6px;
-            border-left: 3px solid #2c5282;
-        }
-
-        .time-slice.from-file .slice-label {
-            font-size: 11px;
-            color: #2c5282;
-            font-weight: 600;
-        }
-        
-        .btn {
-            width: 100%;
-            padding: 12px;
-            border: none;
-            border-radius: 6px;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s;
-            margin-top: 10px;
-        }
-        
-        .btn-primary {
-            background: #2c5282;
-            color: white;
-        }
-        
-        .btn-primary:hover {
-            background: #2a4365;
-            box-shadow: 0 4px 12px rgba(44, 82, 130, 0.3);
-        }
-        
-        .btn-secondary {
-            background: #4a5568;
-            color: white;
-        }
-        
-        .status {
-            padding: 10px;
-            border-radius: 6px;
-            font-size: 13px;
-            margin-top: 10px;
-            text-align: center;
-        }
-        
-        .status.success {
-            background: #c6f6d5;
-            color: #22543d;
-        }
-        
-        .status.error {
-            background: #fed7d7;
-            color: #742a2a;
-        }
-        
-        .status.info {
-            background: #bee3f8;
-            color: #2c5282;
-        }
-        
-        .plots-scroll-container {
-            flex: 1;
-            overflow-y: auto;
-            padding-right: 10px;
-        }
-
-        .plot-item {
-            background: #f5f7fa;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-        }
-
-        .plot-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-        }
-
-        .plot-title {
-            font-size: 16px;
-            font-weight: 600;
-            color: #2c3e50;
-        }
-
-        .export-btn {
-            padding: 8px 16px;
-            background: #38a169;
-            color: white;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: 600;
-            font-size: 13px;
-        }
-
-        .export-btn:hover {
-            background: #2f855a;
-        }
-
-        .plot-canvas-wrapper {
-            background: white;
-            border-radius: 8px;
-            padding: 20px;
-        }
-
-        .empty-state {
-            text-align: center;
-            color: #718096;
-            font-size: 16px;
-            padding: 60px 20px;
-            background: #f5f7fa;
-            border-radius: 8px;
-        }
-
-        canvas {
-            max-width: 100%;
-            height: 400px !important;
-        }
-
-        .results-header {
-            font-size: 20px;
-            font-weight: 600;
-            color: #2c3e50;
-            margin-bottom: 20px;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; background: #f0f0f0; padding: 20px; }
+        .container { max-width: 1400px; margin: 0 auto; background: white; display: grid; grid-template-columns: 350px 1fr; min-height: 90vh; }
+        .sidebar { background: #f5f5f5; padding: 20px; border-right: 1px solid #ddd; overflow-y: auto; }
+        .main-content { padding: 20px; display: flex; flex-direction: column; overflow-y: auto; }
+        h1 { font-size: 20px; margin-bottom: 20px; }
+        .section { margin-bottom: 20px; }
+        .section-title { font-size: 13px; font-weight: bold; margin-bottom: 8px; }
+        input[type="text"], input[type="number"] { width: 100%; padding: 8px; border: 1px solid #ddd; }
+        .drop-zone { border: 2px dashed #999; padding: 20px; text-align: center; cursor: pointer; background: white; }
+        .drop-zone:hover, .drop-zone.dragover { border-color: #333; background: #f9f9f9; }
+        .drop-zone-small { padding: 15px; font-size: 12px; }
+        .file-list { margin-top: 10px; max-height: 120px; overflow-y: auto; }
+        .file-item { background: white; padding: 8px; margin: 5px 0; font-size: 13px; display: flex; justify-content: space-between; border: 1px solid #ddd; }
+        .file-item button { background: #c00; color: white; border: none; padding: 4px 8px; cursor: pointer; }
+        .time-slices { max-height: 250px; overflow-y: auto; }
+        .time-slice { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
+        .time-slice input { width: 90px; padding: 6px; font-size: 13px; }
+        .time-slice button { background: #c00; color: white; border: none; padding: 6px 10px; cursor: pointer; }
+        .time-slice.from-file { background: #e6f2ff; padding: 8px; border-left: 3px solid #2c5282; }
+        .time-slice.from-file .slice-label { font-size: 11px; color: #2c5282; font-weight: bold; }
+        .btn { width: 100%; padding: 10px; border: none; font-size: 14px; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        .btn-primary { background: #2c5282; color: white; }
+        .btn-secondary { background: #666; color: white; }
+        .status { padding: 10px; font-size: 13px; margin-top: 10px; text-align: center; }
+        .status.success { background: #c6f6d5; color: #22543d; }
+        .status.error { background: #fed7d7; color: #742a2a; }
+        .status.info { background: #bee3f8; color: #2c5282; }
+        .plots-scroll-container { flex: 1; overflow-y: auto; padding-right: 10px; }
+        .plot-item { background: #f5f5f5; padding: 20px; margin-bottom: 20px; }
+        .plot-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .plot-title { font-size: 16px; font-weight: bold; }
+        .export-btn { padding: 8px 16px; background: #38a169; color: white; border: none; cursor: pointer; font-weight: bold; font-size: 13px; }
+        .plot-canvas-wrapper { background: white; padding: 20px; }
+        .empty-state { text-align: center; color: #666; font-size: 16px; padding: 60px 20px; background: #f5f5f5; }
+        canvas { max-width: 100%; height: 400px !important; }
+        .results-header { font-size: 18px; font-weight: bold; margin-bottom: 20px; }
     </style>
 </head>
 <body>
@@ -300,13 +52,13 @@
             
             <div class="section">
                 <div class="section-title">Target IP Address</div>
-                <input type="text" id="targetIP" value="192.168.0.201" placeholder="e.g., 192.168.0.201">
+                <input type="text" id="targetIP" value="192.168.0.220" placeholder="e.g., 192.168.0.220">
             </div>
             
             <div class="section">
                 <div class="section-title">Latency Smoothing Window</div>
                 <input type="number" id="smoothingWindow" value="1" min="1" max="100" placeholder="e.g., 5">
-                <small style="color: #718096; font-size: 12px; display: block; margin-top: 5px;">Moving average window size (1 = no smoothing)</small>
+                <small style="color: #666; font-size: 12px; display: block; margin-top: 5px;">Moving average window size (1 = no smoothing)</small>
             </div>
             
             <div class="section">
@@ -357,57 +109,27 @@
         let charts = [];
         let latencyFiles = {};
 
-    
+        addTimeSlice('14:42:58', '14:44:47');
+        addTimeSlice('14:50:01', '14:51:46');
+        addTimeSlice('14:54:28', '14:56:22');
 
-        // File handling for log files
         const dropZone = document.getElementById('dropZone');
         const fileInput = document.getElementById('fileInput');
 
         dropZone.addEventListener('click', () => fileInput.click());
-        
-        dropZone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            dropZone.classList.add('dragover');
-        });
-        
-        dropZone.addEventListener('dragleave', () => {
-            dropZone.classList.remove('dragover');
-        });
-        
-        dropZone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            dropZone.classList.remove('dragover');
-            handleFiles(e.dataTransfer.files);
-        });
-        
-        fileInput.addEventListener('change', (e) => {
-            handleFiles(e.target.files);
-        });
+        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+        dropZone.addEventListener('drop', (e) => { e.preventDefault(); dropZone.classList.remove('dragover'); handleFiles(e.dataTransfer.files); });
+        fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
 
-        // Slice file handling
         const sliceDropZone = document.getElementById('sliceDropZone');
         const sliceFileInput = document.getElementById('sliceFileInput');
 
         sliceDropZone.addEventListener('click', () => sliceFileInput.click());
-        
-        sliceDropZone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            sliceDropZone.classList.add('dragover');
-        });
-        
-        sliceDropZone.addEventListener('dragleave', () => {
-            sliceDropZone.classList.remove('dragover');
-        });
-        
-        sliceDropZone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            sliceDropZone.classList.remove('dragover');
-            handleSliceFiles(e.dataTransfer.files);
-        });
-        
-        sliceFileInput.addEventListener('change', (e) => {
-            handleSliceFiles(e.target.files);
-        });
+        sliceDropZone.addEventListener('dragover', (e) => { e.preventDefault(); sliceDropZone.classList.add('dragover'); });
+        sliceDropZone.addEventListener('dragleave', () => sliceDropZone.classList.remove('dragover'));
+        sliceDropZone.addEventListener('drop', (e) => { e.preventDefault(); sliceDropZone.classList.remove('dragover'); handleSliceFiles(e.dataTransfer.files); });
+        sliceFileInput.addEventListener('change', (e) => handleSliceFiles(e.target.files));
 
         function handleFiles(fileList) {
             for (let file of fileList) {
@@ -428,28 +150,19 @@
 
         async function handleSliceFile(file) {
             if (!file) return;
-            
             try {
                 const content = await file.text();
                 latencyFiles[file.name] = content;
-                
                 const lines = content.split('\n');
-                
-                let firstTime = null;
-                let lastTime = null;
-                
+                let firstTime = null, lastTime = null;
                 for (let line of lines) {
                     const match = line.match(/(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})/);
-                    
                     if (match) {
                         const time = match[2];
-                        if (!firstTime) {
-                            firstTime = time;
-                        }
+                        if (!firstTime) firstTime = time;
                         lastTime = time;
                     }
                 }
-                
                 if (firstTime && lastTime) {
                     addTimeSlice(firstTime, lastTime, file.name);
                     showStatus(`Added slice from ${file.name}: ${firstTime} to ${lastTime}`, 'success');
@@ -464,56 +177,31 @@
         function parseLatencyFile(content) {
             const lines = content.split('\n');
             const data = [];
-            
             for (let line of lines) {
                 const match = line.match(/(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2}).*?time=([\d.]+)\s*ms/);
-                
                 if (match) {
-                    const dateStr = match[1];
-                    const timeStr = match[2];
-                    const latency = parseFloat(match[3]);
-                    
-                    const [year, month, day] = dateStr.split('-').map(Number);
-                    const [h, m, s] = timeStr.split(':').map(Number);
+                    const [year, month, day] = match[1].split('-').map(Number);
+                    const [h, m, s] = match[2].split(':').map(Number);
                     const mockDate = new Date(year, month - 1, day, h, m, s);
-                    
-                    data.push({
-                        time: mockDate,
-                        timeStr: timeStr,
-                        latency: latency
-                    });
+                    data.push({ time: mockDate, timeStr: match[2], latency: parseFloat(match[3]) });
                 }
             }
-            
             return data;
         }
 
         function smoothLatencyData(data, windowSize) {
-            if (windowSize <= 1 || data.length === 0) {
-                return data;
-            }
-            
+            if (windowSize <= 1 || data.length === 0) return data;
             const smoothed = [];
-            
             for (let i = 0; i < data.length; i++) {
                 const start = Math.max(0, i - Math.floor(windowSize / 2));
                 const end = Math.min(data.length, i + Math.ceil(windowSize / 2));
-                
-                let sum = 0;
-                let count = 0;
-                
+                let sum = 0, count = 0;
                 for (let j = start; j < end; j++) {
                     sum += data[j].latency;
                     count++;
                 }
-                
-                smoothed.push({
-                    time: data[i].time,
-                    timeStr: data[i].timeStr,
-                    latency: sum / count
-                });
+                smoothed.push({ time: data[i].time, timeStr: data[i].timeStr, latency: sum / count });
             }
-            
             return smoothed;
         }
 
@@ -523,10 +211,7 @@
             files.forEach((file, index) => {
                 const item = document.createElement('div');
                 item.className = 'file-item';
-                item.innerHTML = `
-                    <span>${file.name}</span>
-                    <button onclick="removeFile(${index})">×</button>
-                `;
+                item.innerHTML = `<span>${file.name}</span><button onclick="removeFile(${index})">×</button>`;
                 fileListDiv.appendChild(item);
             });
         }
@@ -540,19 +225,8 @@
             const container = document.getElementById('timeSlices');
             const slice = document.createElement('div');
             slice.className = sourceFile ? 'time-slice from-file' : 'time-slice';
-            
-            let label = '';
-            if (sourceFile) {
-                label = `<div class="slice-label">📄 ${sourceFile}</div>`;
-            }
-            
-            slice.innerHTML = `
-                ${label}
-                <input type="text" value="${start}" placeholder="HH:MM:SS">
-                <span>to</span>
-                <input type="text" value="${end}" placeholder="HH:MM:SS">
-                <button onclick="this.parentElement.remove()">×</button>
-            `;
+            let label = sourceFile ? `<div class="slice-label">📄 ${sourceFile}</div>` : '';
+            slice.innerHTML = `${label}<input type="text" value="${start}" placeholder="HH:MM:SS"><span>to</span><input type="text" value="${end}" placeholder="HH:MM:SS"><button onclick="this.parentElement.remove()">×</button>`;
             container.appendChild(slice);
         }
 
@@ -565,13 +239,9 @@
         function parseLogFile(content, targetIP) {
             const sections = content.split('/////');
             const data = [];
-            
-            let currentTime = null;
-            let currentTimeStr = null;
-            
+            let currentTime = null, currentTimeStr = null;
             for (let section of sections) {
                 const timeMatch = section.match(/LocalBeginTime:\s*(\d+)\s*\(([^)]+)\)/);
-                
                 if (timeMatch) {
                     const timeStr = timeMatch[2];
                     try {
@@ -582,14 +252,12 @@
                         currentTime = null;
                     }
                 }
-                
                 if (currentTime && section.includes(targetIP)) {
                     data.push({ time: currentTime, present: 1, timeStr: currentTimeStr });
                 } else if (currentTime && section.includes('Number of Clients')) {
                     data.push({ time: currentTime, present: 0, timeStr: currentTimeStr });
                 }
             }
-            
             return data;
         }
 
@@ -597,65 +265,43 @@
             const targetIP = document.getElementById('targetIP').value.trim();
             const smoothingWindow = parseInt(document.getElementById('smoothingWindow').value) || 1;
             
-            if (!targetIP) {
-                showStatus('Please enter a target IP address', 'error');
-                return;
-            }
-            
-            if (files.length === 0) {
-                showStatus('Please add log files', 'error');
-                return;
-            }
+            if (!targetIP) { showStatus('Please enter a target IP address', 'error'); return; }
+            if (files.length === 0) { showStatus('Please add log files', 'error'); return; }
             
             const sliceElements = document.querySelectorAll('.time-slice');
             const timeSlices = [];
-            
             for (let elem of sliceElements) {
                 const inputs = elem.querySelectorAll('input[type="text"]');
                 const start = inputs[0].value.trim();
                 const end = inputs[1].value.trim();
-                if (start && end) {
-                    timeSlices.push({ start, end });
-                }
+                if (start && end) timeSlices.push({ start, end });
             }
             
-            if (timeSlices.length === 0) {
-                showStatus('Please add at least one time slice', 'error');
-                return;
-            }
+            if (timeSlices.length === 0) { showStatus('Please add at least one time slice', 'error'); return; }
             
             showStatus('Processing logs...', 'info');
             
             const fileData = {};
-            
             for (let file of files) {
                 try {
                     const content = await file.text();
                     const data = parseLogFile(content, targetIP);
-                    if (data.length > 0) {
-                        fileData[file.name] = data;
-                    }
+                    if (data.length > 0) fileData[file.name] = data;
                 } catch (e) {
                     console.error(`Error parsing ${file.name}:`, e);
                 }
             }
             
-            if (Object.keys(fileData).length === 0) {
-                showStatus('No valid data found in log files', 'error');
-                return;
-            }
+            if (Object.keys(fileData).length === 0) { showStatus('No valid data found in log files', 'error'); return; }
             
             const latencyData = {};
             for (let filename in latencyFiles) {
                 const data = parseLatencyFile(latencyFiles[filename]);
-                if (data.length > 0) {
-                    latencyData[filename] = data;
-                }
+                if (data.length > 0) latencyData[filename] = data;
             }
             
             plots = [];
             const colors = ['#2c5282', '#38a169', '#d69e2e', '#c53030', '#805ad5', '#319795', '#dd6b20', '#e53e3e'];
-            
             const apNames = {};
             let apCounter = 1;
             
@@ -678,17 +324,8 @@
                     
                     if (filtered.length > 0) {
                         hasData = true;
-                        
-                        if (!apNames[filename]) {
-                            apNames[filename] = `AP${apCounter}`;
-                            apCounter++;
-                        }
-                        
-                        const points = filtered.map(d => ({
-                            x: d.time.toTimeString().split(' ')[0],
-                            y: d.present
-                        }));
-                        
+                        if (!apNames[filename]) apNames[filename] = `AP${apCounter++}`;
+                        const points = filtered.map(d => ({ x: d.time.toTimeString().split(' ')[0], y: d.present }));
                         datasets.push({
                             label: apNames[filename],
                             data: points,
@@ -712,14 +349,8 @@
                     
                     if (filtered.length > 0) {
                         hasData = true;
-                        
                         const smoothed = smoothLatencyData(filtered, smoothingWindow);
-                        
-                        const points = smoothed.map(d => ({
-                            x: d.timeStr,
-                            y: d.latency
-                        }));
-                        
+                        const points = smoothed.map(d => ({ x: d.timeStr, y: d.latency }));
                         datasets.push({
                             label: `Latency (${filename})`,
                             data: points,
@@ -754,7 +385,6 @@
         function displayAllPlots() {
             const container = document.getElementById('plotsContainer');
             container.innerHTML = '';
-            
             charts.forEach(chart => chart.destroy());
             charts = [];
             
@@ -773,26 +403,16 @@
                 container.appendChild(plotItem);
                 
                 const ctx = document.getElementById(`plotCanvas${index}`).getContext('2d');
-                
                 const chart = new Chart(ctx, {
                     type: 'line',
                     data: { datasets: plot.datasets },
                     options: {
                         responsive: true,
                         maintainAspectRatio: false,
-                        interaction: {
-                            mode: 'index',
-                            intersect: false
-                        },
+                        interaction: { mode: 'index', intersect: false },
                         plugins: {
-                            title: {
-                                display: true,
-                                text: `IP ${plot.targetIP} Presence & Latency`,
-                                font: { size: 14, weight: 'bold' }
-                            },
-                            legend: {
-                                position: 'top'
-                            }
+                            title: { display: true, text: `IP ${plot.targetIP} Presence & Latency`, font: { size: 14, weight: 'bold' } },
+                            legend: { position: 'top' }
                         },
                         scales: {
                             y: {
@@ -807,44 +427,28 @@
                                         return value === 0 ? 'Absent' : value === 1 ? 'Present' : '';
                                     }
                                 },
-                                title: {
-                                    display: true,
-                                    text: 'Connection Status',
-                                    font: { weight: 'bold' }
-                                }
+                                title: { display: true, text: 'Connection Status', font: { weight: 'bold' } }
                             },
                             y1: {
                                 type: 'linear',
                                 display: true,
                                 position: 'right',
-                                title: {
-                                    display: true,
-                                    text: 'Latency (ms)',
-                                    font: { weight: 'bold' }
-                                },
-                                grid: {
-                                    drawOnChartArea: false
-                                }
+                                title: { display: true, text: 'Latency (ms)', font: { weight: 'bold' } },
+                                grid: { drawOnChartArea: false }
                             },
                             x: {
                                 type: 'category',
-                                title: {
-                                    display: true,
-                                    text: 'Time',
-                                    font: { weight: 'bold' }
-                                }
+                                title: { display: true, text: 'Time', font: { weight: 'bold' } }
                             }
                         }
                     }
                 });
-                
                 charts.push(chart);
             });
         }
 
         function exportPlot(index) {
             if (index >= charts.length) return;
-            
             const canvas = document.getElementById(`plotCanvas${index}`);
             const url = canvas.toDataURL('image/png');
             const link = document.createElement('a');
