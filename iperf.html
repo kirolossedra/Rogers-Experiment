@@ -300,7 +300,7 @@
             
             <div class="section">
                 <div class="section-title">Target IP Address</div>
-                <input type="text" id="targetIP" value="192.168.0.220" placeholder="e.g., 192.168.0.220">
+                <input type="text" id="targetIP" value="192.168.0.201" placeholder="e.g., 192.168.0.201">
             </div>
             
             <div class="section">
@@ -351,10 +351,7 @@
         let charts = [];
         let iperfFiles = {};
 
-        // Initialize with default time slices
-        addTimeSlice('14:42:58', '14:44:47');
-        addTimeSlice('14:50:01', '14:51:46');
-        addTimeSlice('14:54:28', '14:56:22');
+     
 
         // File handling for log files
         const dropZone = document.getElementById('dropZone');
