@@ -6,291 +6,47 @@
     <title>Network Log Analyzer</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: 'Segoe UI', 'Roboto', 'Arial', sans-serif;
-            background: #1a1f2e;
-            min-height: 100vh;
-            padding: 20px;
-        }
-        
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            background: #ffffff;
-            border-radius: 8px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-            overflow: hidden;
-            display: grid;
-            grid-template-columns: 350px 1fr;
-            min-height: 90vh;
-        }
-        
-        .sidebar {
-            background: #f5f7fa;
-            padding: 30px;
-            border-right: 1px solid #d0d4db;
-            overflow-y: auto;
-        }
-        
-        .main-content {
-            padding: 30px;
-            display: flex;
-            flex-direction: column;
-            overflow-y: auto;
-        }
-        
-        h1 {
-            font-size: 24px;
-            margin-bottom: 25px;
-            color: #2c3e50;
-            font-weight: 600;
-        }
-        
-        .section {
-            margin-bottom: 25px;
-        }
-        
-        .section-title {
-            font-size: 14px;
-            font-weight: 600;
-            color: #2c3e50;
-            margin-bottom: 10px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        
-        input[type="text"] {
-            width: 100%;
-            padding: 10px;
-            border: 2px solid #d0d4db;
-            border-radius: 6px;
-            font-size: 14px;
-            transition: border-color 0.3s;
-        }
-        
-        input[type="text"]:focus {
-            outline: none;
-            border-color: #2c5282;
-        }
-        
-        .drop-zone {
-            border: 3px dashed #b0b8c1;
-            border-radius: 8px;
-            padding: 30px;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.3s;
-            background: white;
-        }
-        
-        .drop-zone:hover, .drop-zone.dragover {
-            border-color: #2c5282;
-            background: #edf2f7;
-        }
-        
-        .drop-zone-text {
-            color: #4a5568;
-            font-size: 14px;
-        }
-
-        .drop-zone-small {
-            padding: 20px;
-            font-size: 13px;
-        }
-        
-        .file-list {
-            margin-top: 10px;
-            max-height: 120px;
-            overflow-y: auto;
-        }
-        
-        .file-item {
-            background: white;
-            padding: 8px 12px;
-            margin: 5px 0;
-            border-radius: 6px;
-            font-size: 13px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border: 1px solid #d0d4db;
-        }
-        
-        .file-item button {
-            background: #c53030;
-            color: white;
-            border: none;
-            padding: 4px 8px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 12px;
-        }
-        
-        .time-slices {
-            max-height: 250px;
-            overflow-y: auto;
-        }
-        
-        .time-slice {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 8px;
-            align-items: center;
-        }
-        
-        .time-slice input {
-            width: 90px;
-            padding: 6px;
-            font-size: 13px;
-        }
-        
-        .time-slice button {
-            background: #c53030;
-            color: white;
-            border: none;
-            padding: 6px 10px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-weight: bold;
-        }
-
-        .time-slice.from-file {
-            background: #e6f2ff;
-            padding: 8px;
-            border-radius: 6px;
-            border-left: 3px solid #2c5282;
-        }
-
-        .time-slice.from-file .slice-label {
-            font-size: 11px;
-            color: #2c5282;
-            font-weight: 600;
-        }
-        
-        .btn {
-            width: 100%;
-            padding: 12px;
-            border: none;
-            border-radius: 6px;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s;
-            margin-top: 10px;
-        }
-        
-        .btn-primary {
-            background: #2c5282;
-            color: white;
-        }
-        
-        .btn-primary:hover {
-            background: #2a4365;
-            box-shadow: 0 4px 12px rgba(44, 82, 130, 0.3);
-        }
-        
-        .btn-secondary {
-            background: #4a5568;
-            color: white;
-        }
-        
-        .status {
-            padding: 10px;
-            border-radius: 6px;
-            font-size: 13px;
-            margin-top: 10px;
-            text-align: center;
-        }
-        
-        .status.success {
-            background: #c6f6d5;
-            color: #22543d;
-        }
-        
-        .status.error {
-            background: #fed7d7;
-            color: #742a2a;
-        }
-        
-        .status.info {
-            background: #bee3f8;
-            color: #2c5282;
-        }
-        
-        .plots-scroll-container {
-            flex: 1;
-            overflow-y: auto;
-            padding-right: 10px;
-        }
-
-        .plot-item {
-            background: #f5f7fa;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-        }
-
-        .plot-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-        }
-
-        .plot-title {
-            font-size: 16px;
-            font-weight: 600;
-            color: #2c3e50;
-        }
-
-        .export-btn {
-            padding: 8px 16px;
-            background: #38a169;
-            color: white;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: 600;
-            font-size: 13px;
-        }
-
-        .export-btn:hover {
-            background: #2f855a;
-        }
-
-        .plot-canvas-wrapper {
-            background: white;
-            border-radius: 8px;
-            padding: 20px;
-        }
-
-        .empty-state {
-            text-align: center;
-            color: #718096;
-            font-size: 16px;
-            padding: 60px 20px;
-            background: #f5f7fa;
-            border-radius: 8px;
-        }
-
-        canvas {
-            max-width: 100%;
-            height: 400px !important;
-        }
-
-        .results-header {
-            font-size: 20px;
-            font-weight: 600;
-            color: #2c3e50;
-            margin-bottom: 20px;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; background: #1a1f2e; padding: 20px; }
+        .container { max-width: 1400px; margin: 0 auto; background: #fff; border-radius: 8px; display: grid; grid-template-columns: 350px 1fr; min-height: 90vh; }
+        .sidebar { background: #f5f7fa; padding: 20px; border-right: 1px solid #ddd; overflow-y: auto; }
+        .main-content { padding: 20px; display: flex; flex-direction: column; overflow-y: auto; }
+        h1 { font-size: 24px; margin-bottom: 20px; color: #2c3e50; }
+        .section { margin-bottom: 20px; }
+        .section-title { font-size: 13px; font-weight: 600; color: #2c3e50; margin-bottom: 8px; text-transform: uppercase; }
+        input[type="text"] { width: 100%; padding: 8px; border: 2px solid #ddd; border-radius: 4px; font-size: 14px; }
+        input[type="text"]:focus { outline: none; border-color: #2c5282; }
+        .drop-zone { border: 2px dashed #bbb; border-radius: 6px; padding: 25px; text-align: center; cursor: pointer; background: white; }
+        .drop-zone:hover, .drop-zone.dragover { border-color: #2c5282; background: #edf2f7; }
+        .drop-zone-text { color: #4a5568; font-size: 14px; }
+        .drop-zone-small { padding: 15px; font-size: 13px; }
+        .file-list { margin-top: 10px; max-height: 120px; overflow-y: auto; }
+        .file-item { background: white; padding: 8px; margin: 5px 0; border-radius: 4px; font-size: 13px; display: flex; justify-content: space-between; border: 1px solid #ddd; }
+        .file-item button { background: #c53030; color: white; border: none; padding: 4px 8px; border-radius: 3px; cursor: pointer; font-size: 12px; }
+        .time-slices { max-height: 250px; overflow-y: auto; }
+        .time-slice { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
+        .time-slice input { width: 90px; padding: 6px; font-size: 13px; }
+        .time-slice button { background: #c53030; color: white; border: none; padding: 6px 10px; border-radius: 3px; cursor: pointer; font-weight: bold; }
+        .time-slice.from-file { background: #e6f2ff; padding: 8px; border-radius: 4px; border-left: 3px solid #2c5282; }
+        .time-slice.from-file .slice-label { font-size: 11px; color: #2c5282; font-weight: 600; }
+        .btn { width: 100%; padding: 10px; border: none; border-radius: 4px; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 10px; }
+        .btn-primary { background: #2c5282; color: white; }
+        .btn-primary:hover { background: #2a4365; }
+        .btn-secondary { background: #4a5568; color: white; }
+        .status { padding: 10px; border-radius: 4px; font-size: 13px; margin-top: 10px; text-align: center; }
+        .status.success { background: #c6f6d5; color: #22543d; }
+        .status.error { background: #fed7d7; color: #742a2a; }
+        .status.info { background: #bee3f8; color: #2c5282; }
+        .plots-scroll-container { flex: 1; overflow-y: auto; padding-right: 10px; }
+        .plot-item { background: #f5f7fa; border-radius: 6px; padding: 15px; margin-bottom: 15px; }
+        .plot-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .plot-title { font-size: 16px; font-weight: 600; color: #2c3e50; }
+        .export-btn { padding: 8px 16px; background: #38a169; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 13px; }
+        .export-btn:hover { background: #2f855a; }
+        .plot-canvas-wrapper { background: white; border-radius: 6px; padding: 15px; }
+        .empty-state { text-align: center; color: #718096; font-size: 16px; padding: 60px 20px; background: #f5f7fa; border-radius: 6px; }
+        canvas { max-width: 100%; height: 400px !important; }
+        .results-header { font-size: 20px; font-weight: 600; color: #2c3e50; margin-bottom: 15px; }
     </style>
 </head>
 <body>
@@ -306,10 +62,7 @@
             <div class="section">
                 <div class="section-title">Log Files</div>
                 <div class="drop-zone" id="dropZone">
-                    <div class="drop-zone-text">
-                        📁 Drop .txt or .log files here<br>
-                        <small>or click to browse</small>
-                    </div>
+                    <div class="drop-zone-text">📁 Drop .txt or .log files here<br><small>or click to browse</small></div>
                     <input type="file" id="fileInput" multiple accept=".txt,.log" style="display: none;">
                 </div>
                 <div class="file-list" id="fileList"></div>
@@ -318,11 +71,16 @@
             <div class="section">
                 <div class="section-title">Add Slices from File</div>
                 <div class="drop-zone drop-zone-small" id="sliceDropZone">
-                    <div class="drop-zone-text">
-                        📄 Drop slice files here<br>
-                        <small>(iperf3 format)</small>
-                    </div>
+                    <div class="drop-zone-text">📄 Drop slice files here<br><small>(iperf3 format)</small></div>
                     <input type="file" id="sliceFileInput" multiple accept=".txt,.log" style="display: none;">
+                </div>
+            </div>
+            
+            <div class="section">
+                <div class="section-title">Smoothing Window</div>
+                <input type="range" id="smoothingSlider" min="1" max="20" value="1" style="width: 100%;">
+                <div style="text-align: center; font-size: 12px; color: #4a5568; margin-top: 5px;">
+                    Window: <span id="smoothingValue">1</span> points
                 </div>
             </div>
             
@@ -333,7 +91,6 @@
             </div>
             
             <button class="btn btn-primary" onclick="processLogs()">🚀 Generate Plots</button>
-            
             <div id="status"></div>
         </div>
         
@@ -351,57 +108,40 @@
         let charts = [];
         let iperfFiles = {};
 
-     
-
-        // File handling for log files
         const dropZone = document.getElementById('dropZone');
         const fileInput = document.getElementById('fileInput');
-
         dropZone.addEventListener('click', () => fileInput.click());
-        
-        dropZone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            dropZone.classList.add('dragover');
-        });
-        
-        dropZone.addEventListener('dragleave', () => {
-            dropZone.classList.remove('dragover');
-        });
-        
-        dropZone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            dropZone.classList.remove('dragover');
-            handleFiles(e.dataTransfer.files);
-        });
-        
-        fileInput.addEventListener('change', (e) => {
-            handleFiles(e.target.files);
-        });
+        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+        dropZone.addEventListener('drop', (e) => { e.preventDefault(); dropZone.classList.remove('dragover'); handleFiles(e.dataTransfer.files); });
+        fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
 
-        // Slice file handling
         const sliceDropZone = document.getElementById('sliceDropZone');
         const sliceFileInput = document.getElementById('sliceFileInput');
-
         sliceDropZone.addEventListener('click', () => sliceFileInput.click());
-        
-        sliceDropZone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            sliceDropZone.classList.add('dragover');
+        sliceDropZone.addEventListener('dragover', (e) => { e.preventDefault(); sliceDropZone.classList.add('dragover'); });
+        sliceDropZone.addEventListener('dragleave', () => sliceDropZone.classList.remove('dragover'));
+        sliceDropZone.addEventListener('drop', (e) => { e.preventDefault(); sliceDropZone.classList.remove('dragover'); handleSliceFiles(e.dataTransfer.files); });
+        sliceFileInput.addEventListener('change', (e) => handleSliceFiles(e.target.files));
+
+        const smoothingSlider = document.getElementById('smoothingSlider');
+        const smoothingValue = document.getElementById('smoothingValue');
+        smoothingSlider.addEventListener('input', (e) => {
+            smoothingValue.textContent = e.target.value;
         });
-        
-        sliceDropZone.addEventListener('dragleave', () => {
-            sliceDropZone.classList.remove('dragover');
-        });
-        
-        sliceDropZone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            sliceDropZone.classList.remove('dragover');
-            handleSliceFiles(e.dataTransfer.files);
-        });
-        
-        sliceFileInput.addEventListener('change', (e) => {
-            handleSliceFiles(e.target.files);
-        });
+
+        function movingAverage(data, windowSize) {
+            if (windowSize <= 1) return data;
+            const result = [];
+            for (let i = 0; i < data.length; i++) {
+                const start = Math.max(0, i - Math.floor(windowSize / 2));
+                const end = Math.min(data.length, i + Math.ceil(windowSize / 2));
+                const window = data.slice(start, end);
+                const avg = window.reduce((sum, val) => sum + val.y, 0) / window.length;
+                result.push({ x: data[i].x, y: avg });
+            }
+            return result;
+        }
 
         function handleFiles(fileList) {
             for (let file of fileList) {
@@ -422,19 +162,14 @@
 
         async function handleSliceFile(file) {
             if (!file) return;
-            
             try {
                 const content = await file.text();
                 iperfFiles[file.name] = content;
-                
                 const lines = content.split('\n');
-                
                 let firstTime = null;
                 let lastTime = null;
-                
                 for (let line of lines) {
                     const match = line.match(/[A-Za-z]{3}\s+[A-Za-z]{3}\s+\d+\s+(\d{2}:\d{2}:\d{2})\s+\d{4}.*?\d+\.\d+-\d+\.\d+\s+sec/);
-                    
                     if (match) {
                         const time = match[1];
                         if (!firstTime) {
@@ -443,7 +178,6 @@
                         lastTime = time;
                     }
                 }
-                
                 if (firstTime && lastTime) {
                     addTimeSlice(firstTime, lastTime, file.name);
                     showStatus(`Added slice from ${file.name}: ${firstTime} to ${lastTime}`, 'success');
@@ -458,25 +192,16 @@
         function parseIperfFile(content) {
             const lines = content.split('\n');
             const data = [];
-            
             for (let line of lines) {
                 const match = line.match(/[A-Za-z]{3}\s+[A-Za-z]{3}\s+\d+\s+(\d{2}:\d{2}:\d{2})\s+\d{4}.*?\d+\.\d+-\d+\.\d+\s+sec\s+[\d.]+\s+[A-Za-z]+\s+([\d.]+)\s+Mbits/);
-                
                 if (match) {
                     const time = match[1];
                     const mbps = parseFloat(match[2]);
-                    
                     const [h, m, s] = time.split(':').map(Number);
                     const mockDate = new Date(2000, 0, 1, h, m, s);
-                    
-                    data.push({
-                        time: mockDate,
-                        timeStr: time,
-                        mbps: mbps
-                    });
+                    data.push({ time: mockDate, timeStr: time, mbps: mbps });
                 }
             }
-            
             return data;
         }
 
@@ -486,10 +211,7 @@
             files.forEach((file, index) => {
                 const item = document.createElement('div');
                 item.className = 'file-item';
-                item.innerHTML = `
-                    <span>${file.name}</span>
-                    <button onclick="removeFile(${index})">×</button>
-                `;
+                item.innerHTML = `<span>${file.name}</span><button onclick="removeFile(${index})">×</button>`;
                 fileListDiv.appendChild(item);
             });
         }
@@ -503,19 +225,11 @@
             const container = document.getElementById('timeSlices');
             const slice = document.createElement('div');
             slice.className = sourceFile ? 'time-slice from-file' : 'time-slice';
-            
             let label = '';
             if (sourceFile) {
                 label = `<div class="slice-label">📄 ${sourceFile}</div>`;
             }
-            
-            slice.innerHTML = `
-                ${label}
-                <input type="text" value="${start}" placeholder="HH:MM:SS">
-                <span>to</span>
-                <input type="text" value="${end}" placeholder="HH:MM:SS">
-                <button onclick="this.parentElement.remove()">×</button>
-            `;
+            slice.innerHTML = `${label}<input type="text" value="${start}" placeholder="HH:MM:SS"><span>to</span><input type="text" value="${end}" placeholder="HH:MM:SS"><button onclick="this.parentElement.remove()">×</button>`;
             container.appendChild(slice);
         }
 
@@ -558,12 +272,10 @@
 
         async function processLogs() {
             const targetIP = document.getElementById('targetIP').value.trim();
-            
             if (!targetIP) {
                 showStatus('Please enter a target IP address', 'error');
                 return;
             }
-            
             if (files.length === 0) {
                 showStatus('Please add log files', 'error');
                 return;
@@ -571,7 +283,6 @@
             
             const sliceElements = document.querySelectorAll('.time-slice');
             const timeSlices = [];
-            
             for (let elem of sliceElements) {
                 const inputs = elem.querySelectorAll('input[type="text"]');
                 const start = inputs[0].value.trim();
@@ -580,16 +291,13 @@
                     timeSlices.push({ start, end });
                 }
             }
-            
             if (timeSlices.length === 0) {
                 showStatus('Please add at least one time slice', 'error');
                 return;
             }
             
             showStatus('Processing logs...', 'info');
-            
             const fileData = {};
-            
             for (let file of files) {
                 try {
                     const content = await file.text();
@@ -601,7 +309,6 @@
                     console.error(`Error parsing ${file.name}:`, e);
                 }
             }
-            
             if (Object.keys(fileData).length === 0) {
                 showStatus('No valid data found in log files', 'error');
                 return;
@@ -617,9 +324,9 @@
             
             plots = [];
             const colors = ['#2c5282', '#38a169', '#d69e2e', '#c53030', '#805ad5', '#319795', '#dd6b20', '#e53e3e'];
-            
             const apNames = {};
             let apCounter = 1;
+            const windowSize = parseInt(document.getElementById('smoothingSlider').value);
             
             for (let i = 0; i < timeSlices.length; i++) {
                 const slice = timeSlices[i];
@@ -640,23 +347,21 @@
                     
                     if (filtered.length > 0) {
                         hasData = true;
-                        
                         if (!apNames[filename]) {
                             apNames[filename] = `AP${apCounter}`;
                             apCounter++;
                         }
-                        
                         const points = filtered.map(d => ({
                             x: d.time.toTimeString().split(' ')[0],
                             y: d.present
                         }));
-                        
+                        const smoothedPoints = movingAverage(points, windowSize);
                         datasets.push({
                             label: apNames[filename],
-                            data: points,
+                            data: smoothedPoints,
                             borderColor: colors[idx % colors.length],
                             backgroundColor: colors[idx % colors.length] + '40',
-                            stepped: 'after',
+                            tension: 0.4,
                             pointRadius: 0,
                             pointHoverRadius: 4,
                             borderWidth: 2.5,
@@ -665,31 +370,33 @@
                     }
                 });
                 
+                const throughputColors = ['#e63946', '#f77f00', '#06d6a0', '#118ab2', '#073b4c'];
+                let throughputIdx = 0;
                 for (let filename in iperfData) {
                     const data = iperfData[filename];
                     const filtered = data.filter(d => {
                         const t = d.time.getHours() * 3600 + d.time.getMinutes() * 60 + d.time.getSeconds();
                         return t >= startTotal && t <= endTotal;
                     });
-                    
                     if (filtered.length > 0) {
                         hasData = true;
-                        
                         const points = filtered.map(d => ({
                             x: d.timeStr,
                             y: d.mbps
                         }));
-                        
+                        const smoothedPoints = movingAverage(points, windowSize);
                         datasets.push({
                             label: `Throughput (${filename})`,
-                            data: points,
-                            borderColor: '#e63946',
-                            backgroundColor: '#e6394620',
-                            pointRadius: 2,
-                            pointHoverRadius: 5,
+                            data: smoothedPoints,
+                            borderColor: throughputColors[throughputIdx % throughputColors.length],
+                            backgroundColor: throughputColors[throughputIdx % throughputColors.length] + '20',
+                            tension: 0.4,
+                            pointRadius: 0,
+                            pointHoverRadius: 4,
                             borderWidth: 2,
                             yAxisID: 'y1'
                         });
+                        throughputIdx++;
                     }
                 }
                 
@@ -714,26 +421,16 @@
         function displayAllPlots() {
             const container = document.getElementById('plotsContainer');
             container.innerHTML = '';
-            
             charts.forEach(chart => chart.destroy());
             charts = [];
             
             plots.forEach((plot, index) => {
                 const plotItem = document.createElement('div');
                 plotItem.className = 'plot-item';
-                plotItem.innerHTML = `
-                    <div class="plot-header">
-                        <div class="plot-title">${plot.title}</div>
-                        <button class="export-btn" onclick="exportPlot(${index})">💾 Export PNG</button>
-                    </div>
-                    <div class="plot-canvas-wrapper">
-                        <canvas id="plotCanvas${index}"></canvas>
-                    </div>
-                `;
+                plotItem.innerHTML = `<div class="plot-header"><div class="plot-title">${plot.title}</div><button class="export-btn" onclick="exportPlot(${index})">💾 Export PNG</button></div><div class="plot-canvas-wrapper"><canvas id="plotCanvas${index}"></canvas></div>`;
                 container.appendChild(plotItem);
                 
                 const ctx = document.getElementById(`plotCanvas${index}`).getContext('2d');
-                
                 const chart = new Chart(ctx, {
                     type: 'line',
                     data: { datasets: plot.datasets },
@@ -797,14 +494,12 @@
                         }
                     }
                 });
-                
                 charts.push(chart);
             });
         }
 
         function exportPlot(index) {
             if (index >= charts.length) return;
-            
             const canvas = document.getElementById(`plotCanvas${index}`);
             const url = canvas.toDataURL('image/png');
             const link = document.createElement('a');
