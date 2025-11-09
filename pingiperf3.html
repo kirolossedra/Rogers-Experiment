@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Log Analyzer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; background: #1a1f2e; padding: 20px; }
+        .container { max-width: 1400px; margin: 0 auto; background: #fff; border-radius: 8px; display: grid; grid-template-columns: 350px 1fr; min-height: 90vh; }
+        .sidebar { background: #f5f7fa; padding: 20px; border-right: 1px solid #ddd; overflow-y: auto; }
+        .main-content { padding: 20px; display: flex; flex-direction: column; overflow-y: auto; }
+        h1 { font-size: 24px; margin-bottom: 20px; color: #2c3e50; }
+        .section { margin-bottom: 20px; }
+        .section-title { font-size: 13px; font-weight: 600; color: #2c3e50; margin-bottom: 8px; text-transform: uppercase; }
+        input[type="text"], input[type="number"] { width: 100%; padding: 8px; border: 2px solid #ddd; border-radius: 4px; font-size: 14px; }
+        input[type="text"]:focus, input[type="number"]:focus { outline: none; border-color: #2c5282; }
+        .drop-zone { border: 2px dashed #bbb; border-radius: 6px; padding: 25px; text-align: center; cursor: pointer; background: white; }
+        .drop-zone:hover, .drop-zone.dragover { border-color: #2c5282; background: #edf2f7; }
+        .drop-zone-text { color: #4a5568; font-size: 14px; }
+        .drop-zone-small { padding: 15px; font-size: 13px; }
+        .file-list { margin-top: 10px; max-height: 120px; overflow-y: auto; }
+        .file-item { background: white; padding: 8px; margin: 5px 0; border-radius: 4px; font-size: 13px; display: flex; justify-content: space-between; border: 1px solid #ddd; }
+        .file-item button { background: #c53030; color: white; border: none; padding: 4px 8px; border-radius: 3px; cursor: pointer; font-size: 12px; }
+        .time-slices { max-height: 250px; overflow-y: auto; }
+        .time-slice { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
+        .time-slice input { width: 90px; padding: 6px; font-size: 13px; }
+        .time-slice button { background: #c53030; color: white; border: none; padding: 6px 10px; border-radius: 3px; cursor: pointer; font-weight: bold; }
+        .time-slice.from-file { background: #e6f2ff; padding: 8px; border-radius: 4px; border-left: 3px solid #2c5282; }
+        .time-slice.from-file .slice-label { font-size: 11px; color: #2c5282; font-weight: 600; }
+        .btn { width: 100%; padding: 10px; border: none; border-radius: 4px; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 10px; }
+        .btn-primary { background: #2c5282; color: white; }
+        .btn-primary:hover { background: #2a4365; }
+        .btn-secondary { background: #4a5568; color: white; }
+        .status { padding: 10px; border-radius: 4px; font-size: 13px; margin-top: 10px; text-align: center; }
+        .status.success { background: #c6f6d5; color: #22543d; }
+        .status.error { background: #fed7d7; color: #742a2a; }
+        .status.info { background: #bee3f8; color: #2c5282; }
+        .plots-scroll-container { flex: 1; overflow-y: auto; padding-right: 10px; }
+        .plot-item { background: #f5f7fa; border-radius: 6px; padding: 15px; margin-bottom: 15px; }
+        .plot-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .plot-title { font-size: 16px; font-weight: 600; color: #2c3e50; }
+        .export-btn { padding: 8px 16px; background: #38a169; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 13px; }
+        .export-btn:hover { background: #2f855a; }
+        .plot-canvas-wrapper { background: white; border-radius: 6px; padding: 15px; }
+        .empty-state { text-align: center; color: #718096; font-size: 16px; padding: 60px 20px; background: #f5f7fa; border-radius: 6px; }
+        canvas { max-width: 100%; height: 400px !important; }
+        .results-header { font-size: 20px; font-weight: 600; color: #2c3e50; margin-bottom: 15px; }
+        .mode-switch { margin-bottom: 25px; text-align: center; }
+        .mode-switch label { font-size: 15px; font-weight: 600; margin-right: 10px; }
+        .mode-switch select { padding: 5px 10px; font-size: 15px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar">
+            <h1>📊 Log Analyzer</h1>
+            <div class="mode-switch">
+                <label for="modeSelect">Mode:</label>
+                <select id="modeSelect">
+                    <option value="iperf">Throughput (iperf)</option>
+                    <option value="ping">Latency (ping)</option>
+                </select>
+            </div>
+            <div class="section">
+                <div class="section-title">Target IP Address</div>
+                <input type="text" id="targetIP" value="192.168.0.201" placeholder="e.g., 192.168.0.201">
+            </div>
+            <div class="section" id="windowSection">
+                <div class="section-title"><span id="windowLabel">Smoothing Window</span></div>
+                <input type="range" id="smoothingSlider" min="1" max="20" value="1" style="width: 100%;">
+                <div style="text-align: center; font-size: 12px; color: #4a5568; margin-top: 5px;">
+                    Window: <span id="smoothingValue">1</span> points
+                </div>
+            </div>
+            <div class="section" id="logLabelIperf">
+                <div class="section-title">Log Files</div>
+                <div class="drop-zone" id="dropZone">
+                    <div class="drop-zone-text">📁 Drop .txt or .log files here<br><small>or click to browse</small></div>
+                    <input type="file" id="fileInput" multiple accept=".txt,.log" style="display: none;">
+                </div>
+                <div class="file-list" id="fileList"></div>
+            </div>
+            <div class="section" id="sliceLabelIperf">
+                <div class="section-title">Add Slices from File</div>
+                <div class="drop-zone drop-zone-small" id="sliceDropZone">
+                    <div class="drop-zone-text">📄 Drop slice files here<br><small>(iperf3 format)</small></div>
+                    <input type="file" id="sliceFileInput" multiple accept=".txt,.log" style="display: none;">
+                </div>
+            </div>
+            <div class="section" id="sliceLabelPing" style="display:none;">
+                <div class="section-title">Add Latency Files</div>
+                <div class="drop-zone drop-zone-small" id="sliceDropZonePing">
+                    <div class="drop-zone-text">📄 Drop latency files here<br><small>(ping format)</small></div>
+                    <input type="file" id="sliceFileInputPing" multiple accept=".txt,.log" style="display: none;">
+                </div>
+            </div>
+            <div class="section">
+                <div class="section-title">Time Slices (HH:MM:SS)</div>
+                <div class="time-slices" id="timeSlices"></div>
+                <button class="btn btn-secondary" onclick="addTimeSlice()">+ Add Slice Manually</button>
+            </div>
+            <button class="btn btn-primary" onclick="processLogs()">🚀 Generate Plots</button>
+            <div id="status"></div>
+        </div>
+        <div class="main-content">
+            <div class="results-header">Results</div>
+            <div class="plots-scroll-container" id="plotsContainer">
+                <div class="empty-state">No plots generated yet. Configure settings and click "Generate Plots".</div>
+            </div>
+        </div>
+    </div>
+    <script>
+        let files = [];
+        let plots = [];
+        let charts = [];
+        let iperfFiles = {};
+        let latencyFiles = {};
+        let mode = "iperf";
+        // --- UI Mode Switch ---
+        const modeSelect = document.getElementById('modeSelect');
+        const windowLabel = document.getElementById('windowLabel');
+        const windowSection = document.getElementById('windowSection');
+        const logLabelIperf = document.getElementById('logLabelIperf');
+        const sliceLabelIperf = document.getElementById('sliceLabelIperf');
+        const sliceLabelPing = document.getElementById('sliceLabelPing');
+        modeSelect.addEventListener('change', (e) => {
+            mode = e.target.value;
+            if (mode === "iperf") {
+                windowLabel.innerText = "Smoothing Window";
+                logLabelIperf.style.display = "";
+                sliceLabelIperf.style.display = "";
+                sliceLabelPing.style.display = "none";
+            } else {
+                windowLabel.innerText = "Latency Smoothing Window";
+                logLabelIperf.style.display = "";
+                sliceLabelIperf.style.display = "none";
+                sliceLabelPing.style.display = "";
+            }
+        });
+
+        // File input/events iperf3
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        dropZone.addEventListener('click', () => fileInput.click());
+        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+        dropZone.addEventListener('drop', (e) => { e.preventDefault(); dropZone.classList.remove('dragover'); handleFiles(e.dataTransfer.files); });
+        fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+
+        // Files for iperf3 slices
+        const sliceDropZone = document.getElementById('sliceDropZone');
+        const sliceFileInput = document.getElementById('sliceFileInput');
+        sliceDropZone.addEventListener('click', () => sliceFileInput.click());
+        sliceDropZone.addEventListener('dragover', (e) => { e.preventDefault(); sliceDropZone.classList.add('dragover'); });
+        sliceDropZone.addEventListener('dragleave', () => sliceDropZone.classList.remove('dragover'));
+        sliceDropZone.addEventListener('drop', (e) => { e.preventDefault(); sliceDropZone.classList.remove('dragover'); handleSliceFiles(e.dataTransfer.files); });
+        sliceFileInput.addEventListener('change', (e) => handleSliceFiles(e.target.files));
+
+        // Files for ping slices
+        const sliceDropZonePing = document.getElementById('sliceDropZonePing');
+        const sliceFileInputPing = document.getElementById('sliceFileInputPing');
+        sliceDropZonePing.addEventListener('click', () => sliceFileInputPing.click());
+        sliceDropZonePing.addEventListener('dragover', (e) => { e.preventDefault(); sliceDropZonePing.classList.add('dragover'); });
+        sliceDropZonePing.addEventListener('dragleave', () => sliceDropZonePing.classList.remove('dragover'));
+        sliceDropZonePing.addEventListener('drop', (e) => { e.preventDefault(); sliceDropZonePing.classList.remove('dragover'); handlePingSliceFiles(e.dataTransfer.files); });
+        sliceFileInputPing.addEventListener('change', (e) => handlePingSliceFiles(e.target.files));
+
+        // Smoothing slider for throughput/ping
+        const smoothingSlider = document.getElementById('smoothingSlider');
+        const smoothingValue = document.getElementById('smoothingValue');
+        smoothingSlider.addEventListener('input', (e) => {
+            smoothingValue.textContent = e.target.value;
+        });
+
+        function movingAverage(data, windowSize) {
+            if (windowSize <= 1) return data;
+            const result = [];
+            for (let i = 0; i < data.length; i++) {
+                const start = Math.max(0, i - Math.floor(windowSize / 2));
+                const end = Math.min(data.length, i + Math.ceil(windowSize / 2));
+                const window = data.slice(start, end);
+                const avg = window.reduce((sum, val) => sum + val.y, 0) / window.length;
+                result.push({ 
+                    x: data[i].x, 
+                    y: avg, 
+                    originalTime: data[i].originalTime
+                });
+            }
+            return result;
+        }
+
+        function handleFiles(fileList) {
+            for (let file of fileList) {
+                if (file.name.endsWith('.txt') || file.name.endsWith('.log')) {
+                    files.push(file);
+                    updateFileList();
+                }
+            }
+        }
+
+        async function handleSliceFiles(fileList) {
+            for (let file of fileList) {
+                if (file.name.endsWith('.txt') || file.name.endsWith('.log')) {
+                    await handleSliceFile(file);
+                }
+            }
+        }
+
+        async function handlePingSliceFiles(fileList) {
+            for (let file of fileList) {
+                if (file.name.endsWith('.txt') || file.name.endsWith('.log')) {
+                    await handlePingSliceFile(file);
+                }
+            }
+        }
+
+        async function handleSliceFile(file) {
+            if (!file) return;
+            try {
+                const content = await file.text();
+                iperfFiles[file.name] = content;
+                const lines = content.split('\n');
+                let firstTime = null;
+                let lastTime = null;
+                for (let line of lines) {
+                    const match = line.match(/[A-Za-z]{3}\s+[A-Za-z]{3}\s+\d+\s+(\d{2}:\d{2}:\d{2})\s+\d{4}.*?\d+\.\d+-\d+\.\d+\s+sec/);
+                    if (match) {
+                        const time = match[1];
+                        if (!firstTime) {
+                            firstTime = time;
+                        }
+                        lastTime = time;
+                    }
+                }
+                if (firstTime && lastTime) {
+                    addTimeSlice(firstTime, lastTime, file.name);
+                    showStatus(`Added slice from ${file.name}: ${firstTime} to ${lastTime}`, 'success');
+                } else {
+                    showStatus('Could not find valid time range in file', 'error');
+                }
+            } catch (e) {
+                showStatus('Error reading slice file: ' + e.message, 'error');
+            }
+        }
+
+        async function handlePingSliceFile(file) {
+            if (!file) return;
+            try {
+                const content = await file.text();
+                latencyFiles[file.name] = content;
+                const lines = content.split('\n');
+                let firstTime = null;
+                let lastTime = null;
+                for (let line of lines) {
+                    const match = line.match(/(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})/);
+                    if (match) {
+                        const time = match[2];
+                        if (!firstTime) firstTime = time;
+                        lastTime = time;
+                    }
+                }
+                if (firstTime && lastTime) {
+                    addTimeSlice(firstTime, lastTime, file.name);
+                    showStatus(`Added slice from ${file.name}: ${firstTime} to ${lastTime}`, 'success');
+                } else {
+                    showStatus('Could not find valid time range in file', 'error');
+                }
+            } catch (e) {
+                showStatus('Error reading slice file: ' + e.message, 'error');
+            }
+        }
+
+        function parseIperfFile(content) {
+            const lines = content.split('\n');
+            const data = [];
+            for (let line of lines) {
+                const match = line.match(/[A-Za-z]{3}\s+[A-Za-z]{3}\s+\d+\s+(\d{2}:\d{2}:\d{2})\s+\d{4}.*?\d+\.\d+-\d+\.\d+\s+sec\s+[\d.]+\s+[A-Za-z]+\s+([\d.]+)\s+Mbits/);
+                if (match) {
+                    const time = match[1];
+                    const mbps = parseFloat(match[2]);
+                    const [h, m, s] = time.split(':').map(Number);
+                    const mockDate = new Date(2000, 0, 1, h, m, s);
+                    data.push({ time: mockDate, timeStr: time, mbps: mbps, originalTime: time });
+                }
+            }
+            return data;
+        }
+
+        function parseLatencyFile(content) {
+            const lines = content.split('\n');
+            const data = [];
+            for (let line of lines) {
+                const match = line.match(/(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2}).*?time=([\d.]+)\s*ms/);
+                if (match) {
+                    const [year, month, day] = match[1].split('-').map(Number);
+                    const [h, m, s] = match[2].split(':').map(Number);
+                    const mockDate = new Date(year, month - 1, day, h, m, s);
+                    data.push({ time: mockDate, timeStr: match[2], latency: parseFloat(match[3]), originalTime: match[2] });
+                }
+            }
+            return data;
+        }
+
+        function updateFileList() {
+            const fileListDiv = document.getElementById('fileList');
+            fileListDiv.innerHTML = '';
+            files.forEach((file, index) => {
+                const item = document.createElement('div');
+                item.className = 'file-item';
+                item.innerHTML = `<span>${file.name}</span><button onclick="removeFile(${index})">×</button>`;
+                fileListDiv.appendChild(item);
+            });
+        }
+
+        function removeFile(index) {
+            files.splice(index, 1);
+            updateFileList();
+        }
+
+        function addTimeSlice(start = '00:00:00', end = '00:00:00', sourceFile = null) {
+            const container = document.getElementById('timeSlices');
+            const slice = document.createElement('div');
+            slice.className = sourceFile ? 'time-slice from-file' : 'time-slice';
+            let label = '';
+            if (sourceFile) {
+                label = `<div class="slice-label">📄 ${sourceFile}</div>`;
+            }
+            slice.innerHTML = `${label}<input type="text" value="${start}" placeholder="HH:MM:SS"><span>to</span><input type="text" value="${end}" placeholder="HH:MM:SS"><button onclick="this.parentElement.remove()">×</button>`;
+            container.appendChild(slice);
+        }
+
+        function showStatus(message, type = 'info') {
+            const status = document.getElementById('status');
+            status.className = `status ${type}`;
+            status.textContent = message;
+        }
+
+        function parseLogFile(content, targetIP) {
+            const sections = content.split('/////');
+            const data = [];
+            let currentTime = null;
+            let currentTimeStr = null;
+            for (let section of sections) {
+                const timeMatch = section.match(/LocalBeginTime:\s*(\d+)\s*\(([^)]+)\)/);
+                if (timeMatch) {
+                    const timeStr = timeMatch[2];
+                    try {
+                        const timeClean = timeStr.split('.')[0];
+                        currentTime = new Date(timeClean);
+                        currentTimeStr = timeStr;
+                    } catch (e) {
+                        currentTime = null;
+                    }
+                }
+                if (currentTime && section.includes(targetIP)) {
+                    data.push({ time: currentTime, present: 1, timeStr: currentTimeStr });
+                } else if (currentTime && section.includes('Number of Clients')) {
+                    data.push({ time: currentTime, present: 0, timeStr: currentTimeStr });
+                }
+            }
+            return data;
+        }
+
+        async function processLogs() {
+            const targetIP = document.getElementById('targetIP').value.trim();
+            if (!targetIP) {
+                showStatus('Please enter a target IP address', 'error');
+                return;
+            }
+            if (files.length === 0) {
+                showStatus('Please add log files', 'error');
+                return;
+            }
+            const sliceElements = document.querySelectorAll('.time-slice');
+            const timeSlices = [];
+            for (let elem of sliceElements) {
+                const inputs = elem.querySelectorAll('input[type="text"]');
+                const start = inputs[0].value.trim();
+                const end = inputs[1].value.trim();
+                if (start && end) {
+                    timeSlices.push({ start, end });
+                }
+            }
+            if (timeSlices.length === 0) {
+                showStatus('Please add at least one time slice', 'error');
+                return;
+            }
+            showStatus('Processing logs...', 'info');
+            const fileData = {};
+            for (let file of files) {
+                try {
+                    const content = await file.text();
+                    const data = parseLogFile(content, targetIP);
+                    if (data.length > 0) {
+                        fileData[file.name] = data;
+                    }
+                } catch (e) {
+                    console.error(`Error parsing ${file.name}:`, e);
+                }
+            }
+            if (Object.keys(fileData).length === 0) {
+                showStatus('No valid data found in log files', 'error');
+                return;
+            }
+            plots = [];
+            const windowSize = parseInt(document.getElementById('smoothingSlider').value);
+            if (mode === "iperf") {
+                const iperfData = {};
+                for (let filename in iperfFiles) {
+                    const data = parseIperfFile(iperfFiles[filename]);
+                    if (data.length > 0) {
+                        iperfData[filename] = data;
+                    }
+                }
+                const colors = ['#2c5282', '#38a169', '#d69e2e', '#c53030', '#805ad5', '#319795', '#dd6b20', '#e53e3e'];
+                const apNames = {};
+                let apCounter = 1;
+                for (let i = 0; i < timeSlices.length; i++) {
+                    const slice = timeSlices[i];
+                    const [startH, startM, startS] = slice.start.split(':').map(Number);
+                    const [endH, endM, endS] = slice.end.split(':').map(Number);
+                    const startTotal = startH * 3600 + startM * 60 + startS;
+                    const endTotal = endH * 3600 + endM * 60 + endS;
+                    const datasets = [];
+                    let hasData = false;
+                    Object.keys(fileData).forEach((filename, idx) => {
+                        const data = fileData[filename];
+                        const filtered = data.filter(d => {
+                            const t = d.time.getHours() * 3600 + d.time.getMinutes() * 60 + d.time.getSeconds();
+                            return t >= startTotal && t <= endTotal;
+                        });
+                        if (filtered.length > 0) {
+                            hasData = true;
+                            if (!apNames[filename]) {
+                                apNames[filename] = `AP${apCounter}`;
+                                apCounter++;
+                            }
+                            const points = filtered.map(d => ({
+                                x: (d.time.getHours() * 3600 + d.time.getMinutes() * 60 + d.time.getSeconds()) - startTotal,
+                                y: d.present,
+                                originalTime: d.timeStr
+                            }));
+                            const smoothedPoints = movingAverage(points, windowSize);
+                            datasets.push({
+                                label: apNames[filename],
+                                data: smoothedPoints,
+                                borderColor: colors[idx % colors.length],
+                                backgroundColor: colors[idx % colors.length] + '40',
+                                tension: 0.4,
+                                pointRadius: 0,
+                                pointHoverRadius: 4,
+                                borderWidth: 2.5,
+                                yAxisID: 'y'
+                            });
+                        }
+                    });
+                    const throughputColors = ['#e63946', '#f77f00', '#06d6a0', '#118ab2', '#073b4c'];
+                    let throughputIdx = 0;
+                    for (let filename in iperfData) {
+                        const data = iperfData[filename];
+                        const filtered = data.filter(d => {
+                            const t = d.time.getHours() * 3600 + d.time.getMinutes() * 60 + d.time.getSeconds();
+                            return t >= startTotal && t <= endTotal;
+                        });
+                        if (filtered.length > 0) {
+                            hasData = true;
+                            const points = filtered.map(d => ({
+                                x: (d.time.getHours() * 3600 + d.time.getMinutes() * 60 + d.time.getSeconds()) - startTotal,
+                                y: d.mbps,
+                                originalTime: d.timeStr
+                            }));
+                            const smoothedPoints = movingAverage(points, windowSize);
+                            datasets.push({
+                                label: `Throughput (${filename})`,
+                                data: smoothedPoints,
+                                borderColor: throughputColors[throughputIdx % throughputColors.length],
+                                backgroundColor: throughputColors[throughputIdx % throughputColors.length] + '20',
+                                tension: 0.4,
+                                pointRadius: 0,
+                                pointHoverRadius: 4,
+                                borderWidth: 2,
+                                yAxisID: 'y1'
+                            });
+                            throughputIdx++;
+                        }
+                    }
+                    if (hasData) {
+                        plots.push({
+                            title: `Slice ${i + 1}: ${slice.start} to ${slice.end}`,
+                            datasets: datasets,
+                            targetIP: targetIP,
+                            index: i,
+                            mode: 'iperf'
+                        });
+                    }
+                }
+            } else { // mode == "ping"
+                const latencyData = {};
+                for (let filename in latencyFiles) {
+                    const data = parseLatencyFile(latencyFiles[filename]);
+                    if (data.length > 0) latencyData[filename] = data;
+                }
+                const colors = ['#2c5282', '#38a169', '#d69e2e', '#c53030', '#805ad5', '#319795', '#dd6b20', '#e53e3e'];
+                const apNames = {};
+                let apCounter = 1;
+                for (let i = 0; i < timeSlices.length; i++) {
+                    const slice = timeSlices[i];
+                    const [startH, startM, startS] = slice.start.split(':').map(Number);
+                    const [endH, endM, endS] = slice.end.split(':').map(Number);
+                    const startTotal = startH * 3600 + startM * 60 + startS;
+                    const endTotal = endH * 3600 + endM * 60 + endS;
+                    const datasets = [];
+                    let hasData = false;
+                    Object.keys(fileData).forEach((filename, idx) => {
+                        const data = fileData[filename];
+                        const filtered = data.filter(d => {
+                            const t = d.time.getHours() * 3600 + d.time.getMinutes() * 60 + d.time.getSeconds();
+                            return t >= startTotal && t <= endTotal;
+                        });
+                        if (filtered.length > 0) {
+                            hasData = true;
+                            if (!apNames[filename]) apNames[filename] = `AP${apCounter++}`;
+                            const points = filtered.map(d => ({
+                                x: (d.time.getHours() * 3600 + d.time.getMinutes() * 60 + d.time.getSeconds()) - startTotal,
+                                y: d.present,
+                                originalTime: d.timeStr
+                            }));
+                            datasets.push({
+                                label: apNames[filename],
+                                data: points,
+                                borderColor: colors[idx % colors.length],
+                                backgroundColor: colors[idx % colors.length] + '40',
+                                tension: 0.4,
+                                pointRadius: 0,
+                                pointHoverRadius: 4,
+                                borderWidth: 2.5,
+                                yAxisID: 'y'
+                            });
+                        }
+                    });
+                    // Latency curve, smooth!
+                    for (let filename in latencyData) {
+                        const data = latencyData[filename];
+                        const filtered = data.filter(d => {
+                            const t = d.time.getHours() * 3600 + d.time.getMinutes() * 60 + d.time.getSeconds();
+                            return t >= startTotal && t <= endTotal;
+                        });
+                        if (filtered.length > 0) {
+                            hasData = true;
+                            // Smooth latency using same movingAverage for y=latency
+                            // Convert data to points
+                            const points = filtered.map(d => ({
+                                x: (d.time.getHours() * 3600 + d.time.getMinutes() * 60 + d.time.getSeconds()) - startTotal,
+                                y: d.latency,
+                                originalTime: d.timeStr
+                            }));
+                            const smoothedPoints = movingAverage(points, windowSize);
+                            datasets.push({
+                                label: `Latency (${filename})`,
+                                data: smoothedPoints,
+                                borderColor: '#e63946',
+                                backgroundColor: '#e6394620',
+                                tension: 0.4,
+                                pointRadius: 0,
+                                pointHoverRadius: 4,
+                                borderWidth: 2,
+                                yAxisID: 'y1'
+                            });
+                        }
+                    }
+                    if (hasData) {
+                        plots.push({
+                            title: `Slice ${i + 1}: ${slice.start} to ${slice.end}`,
+                            datasets: datasets,
+                            targetIP: targetIP,
+                            index: i,
+                            mode: 'ping'
+                        });
+                    }
+                }
+            }
+            if (plots.length > 0) {
+                displayAllPlots();
+                showStatus(`Generated ${plots.length} plot(s)`, 'success');
+            } else {
+                showStatus('No data found in specified time slices', 'error');
+            }
+        }
+
+        function displayAllPlots() {
+            const container = document.getElementById('plotsContainer');
+            container.innerHTML = '';
+            charts.forEach(chart => chart.destroy());
+            charts = [];
+            plots.forEach((plot, index) => {
+                const plotItem = document.createElement('div');
+                plotItem.className = 'plot-item';
+                plotItem.innerHTML = `<div class="plot-header"><div class="plot-title">${plot.title}</div><button class="export-btn" onclick="exportPlot(${index})">💾 Export PNG</button></div><div class="plot-canvas-wrapper"><canvas id="plotCanvas${index}"></canvas></div>`;
+                container.appendChild(plotItem);
+                const ctx = document.getElementById(`plotCanvas${index}`).getContext('2d');
+                let chartOptions;
+                if (plot.mode === "iperf") {
+                    chartOptions = {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: {
+                            mode: 'index',
+                            intersect: false
+                        },
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: `IP ${plot.targetIP} Presence & Throughput`,
+                                font: { size: 14, weight: 'bold' }
+                            },
+                            legend: {
+                                position: 'top'
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    title: function(context) {
+                                        return "Timestamp: " + (context[0].raw.originalTime || context[0].label);
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                type: 'linear',
+                                display: true,
+                                position: 'left',
+                                min: -0.1,
+                                max: 1.5,
+                                ticks: {
+                                    stepSize: 1,
+                                    callback: function(value) {
+                                        return value === 0 ? 'Absent' : value === 1 ? 'Present' : '';
+                                    }
+                                },
+                                title: {
+                                    display: true,
+                                    text: 'Connection Status',
+                                    font: { weight: 'bold' }
+                                }
+                            },
+                            y1: {
+                                type: 'linear',
+                                display: true,
+                                position: 'right',
+                                title: {
+                                    display: true,
+                                    text: 'Throughput (Mbps)',
+                                    font: { weight: 'bold' }
+                                },
+                                grid: {
+                                    drawOnChartArea: false
+                                }
+                            },
+                            x: {
+                                type: 'linear',
+                                title: {
+                                    display: true,
+                                    text: 'Seconds (elapsed time)',
+                                    font: { weight: 'bold' }
+                                },
+                                ticks: {
+                                    stepSize: 10
+                                }
+                            }
+                        }
+                    };
+                } else {
+                    chartOptions = {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: { mode: 'index', intersect: false },
+                        plugins: {
+                            title: { display: true, text: `IP ${plot.targetIP} Presence & Latency`, font: { size: 14, weight: 'bold' } },
+                            legend: { position: 'top' },
+                            tooltip: {
+                                callbacks: {
+                                    title: function(context) {
+                                        return "Timestamp: " + (context[0].raw.originalTime || context[0].label);
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                type: 'linear',
+                                display: true,
+                                position: 'left',
+                                min: -0.1,
+                                max: 1.5,
+                                ticks: {
+                                    stepSize: 1,
+                                    callback: function(value) {
+                                        return value === 0 ? 'Absent' : value === 1 ? 'Present' : '';
+                                    }
+                                },
+                                title: { display: true, text: 'Connection Status', font: { weight: 'bold' } }
+                            },
+                            y1: {
+                                type: 'linear',
+                                display: true,
+                                position: 'right',
+                                title: { display: true, text: 'Latency (ms)', font: { weight: 'bold' } },
+                                grid: { drawOnChartArea: false }
+                            },
+                            x: {
+                                type: 'linear',
+                                title: { display: true, text: 'Seconds (elapsed time)', font: { weight: 'bold' } },
+                                ticks: { stepSize: 10 }
+                            }
+                        }
+                    };
+                }
+                const chart = new Chart(ctx, {
+                    type: 'line',
+                    data: { datasets: plot.datasets },
+                    options: chartOptions
+                });
+                charts.push(chart);
+            });
+        }
+
+        function exportPlot(index) {
+            if (index >= charts.length) return;
+            const canvas = document.getElementById(`plotCanvas${index}`);
+            const url = canvas.toDataURL('image/png');
+            const link = document.createElement('a');
+            link.download = `plot_slice_${index + 1}.png`;
+            link.href = url;
+            link.click();
+        }
+    </script>
+</body>
+</html>
