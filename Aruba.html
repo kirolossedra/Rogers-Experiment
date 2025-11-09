@@ -1,0 +1,1084 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Log Analyzer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; background: #1a1f2e; padding: 20px; }
+        .container { max-width: 1400px; margin: 0 auto; background: #fff; border-radius: 8px; display: grid; grid-template-columns: 350px 1fr; min-height: 90vh; }
+        .sidebar { background: #f5f7fa; padding: 20px; border-right: 1px solid #ddd; overflow-y: auto; }
+        .main-content { padding: 20px; display: flex; flex-direction: column; overflow-y: auto; }
+        h1 { font-size: 24px; margin-bottom: 20px; color: #2c3e50; }
+        .section { margin-bottom: 20px; }
+        .section-title { font-size: 13px; font-weight: 600; color: #2c3e50; margin-bottom: 8px; text-transform: uppercase; }
+        input[type="text"], input[type="number"] { width: 100%; padding: 8px; border: 2px solid #ddd; border-radius: 4px; font-size: 14px; }
+        input[type="text"]:focus, input[type="number"]:focus { outline: none; border-color: #2c5282; }
+        .drop-zone { border: 2px dashed #bbb; border-radius: 6px; padding: 25px; text-align: center; cursor: pointer; background: white; }
+        .drop-zone:hover, .drop-zone.dragover { border-color: #2c5282; background: #edf2f7; }
+        .drop-zone-text { color: #4a5568; font-size: 14px; }
+        .drop-zone-small { padding: 15px; font-size: 13px; }
+        .file-list { margin-top: 10px; max-height: 120px; overflow-y: auto; }
+        .file-item { background: white; padding: 8px; margin: 5px 0; border-radius: 4px; font-size: 13px; display: flex; justify-content: space-between; border: 1px solid #ddd; }
+        .file-item button { background: #c53030; color: white; border: none; padding: 4px 8px; border-radius: 3px; cursor: pointer; font-size: 12px; }
+        .time-slices { max-height: 250px; overflow-y: auto; }
+        .time-slice { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
+        .time-slice input { width: 75px; padding: 6px; font-size: 13px; }
+        .time-slice select { padding: 3px 7px; font-size: 13px; border-radius: 4px; border: 1px solid #ddd; }
+        .time-slice .checklist { display: inline-flex; gap: 6px; }
+        .time-slice .checklist label { font-size: 12px; }
+        .time-slice button { background: #c53030; color: white; border: none; padding: 6px 10px; border-radius: 3px; cursor: pointer; font-weight: bold; }
+        .time-slice.from-file { background: #e6f2ff; padding: 8px; border-radius: 4px; border-left: 3px solid #2c5282; }
+        .time-slice.from-file .slice-label { font-size: 11px; color: #2c5282; font-weight: 600; }
+        .btn { width: 100%; padding: 10px; border: none; border-radius: 4px; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 10px; }
+        .btn-primary { background: #2c5282; color: white; }
+        .btn-primary:hover { background: #2a4365; }
+        .btn-secondary { background: #4a5568; color: white; }
+        .status { padding: 10px; border-radius: 4px; font-size: 13px; margin-top: 10px; text-align: center; }
+        .status.success { background: #c6f6d5; color: #22543d; }
+        .status.error { background: #fed7d7; color: #742a2a; }
+        .status.info { background: #bee3f8; color: #2c5282; }
+        .plots-scroll-container { flex: 1; overflow-y: auto; padding-right: 10px; }
+        .plot-item { background: #f5f7fa; border-radius: 6px; padding: 15px; margin-bottom: 15px; }
+        .plot-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .plot-title { font-size: 16px; font-weight: 600; color: #2c3e50; }
+        .export-btn { padding: 8px 16px; background: #38a169; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 13px; }
+        .export-btn:hover { background: #2f855a; }
+        .plot-canvas-wrapper { background: white; border-radius: 6px; padding: 15px; }
+        .empty-state { text-align: center; color: #718096; font-size: 16px; padding: 60px 20px; background: #f5f7fa; border-radius: 6px; }
+        canvas { max-width: 100%; height: 400px !important; }
+        .results-header { font-size: 20px; font-weight: 600; color: #2c3e50; margin-bottom: 15px; }
+        .mode-switch { margin-bottom: 25px; text-align: center; }
+        .mode-switch label { font-size: 15px; font-weight: 600; margin-right: 10px; }
+        .mode-switch select { padding: 5px 10px; font-size: 15px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar">
+            <h1>📊 Log Analyzer</h1>
+            <div class="mode-switch">
+                <label for="modeSelect">Mode:</label>
+                <select id="modeSelect">
+                    <option value="iperf">Throughput (iperf)</option>
+                    <option value="ping">Latency (ping)</option>
+                    <option value="snr">Presence/SNR (MAC)</option>
+                    <option value="all">All (Custom Combo)</option>
+                </select>
+            </div>
+            <div class="section" id="targetLabelIP">
+                <div class="section-title">Target IP Address</div>
+                <input type="text" id="targetIP" value="192.168.0.201" placeholder="e.g., 192.168.0.201">
+            </div>
+            <div class="section" id="targetLabelMAC" style="display:none;">
+                <div class="section-title">Target MAC Address</div>
+                <input type="text" id="targetMAC" value="" placeholder="e.g., fa:6a:95:eb:f0:57">
+            </div>
+            <div class="section" id="windowSection">
+                <div class="section-title"><span id="windowLabel">Smoothing Window</span></div>
+                <input type="range" id="smoothingSlider" min="1" max="20" value="1" style="width: 100%;">
+                <div style="text-align: center; font-size: 12px; color: #4a5568; margin-top: 5px;">
+                    Window: <span id="smoothingValue">1</span> points
+                </div>
+            </div>
+            <div class="section" id="logLabelIperf">
+                <div class="section-title">Log Files</div>
+                <div class="drop-zone" id="dropZone">
+                    <div class="drop-zone-text">📁 Drop .txt or .log files here<br><small>Your main experiment log file</small></div>
+                    <input type="file" id="fileInput" multiple accept=".txt,.log" style="display: none;">
+                </div>
+                <div class="file-list" id="fileList"></div>
+            </div>
+            <div class="section" id="sliceLabelIperf">
+                <div class="section-title">Add Slices from File</div>
+                <div class="drop-zone drop-zone-small" id="sliceDropZone">
+                    <div class="drop-zone-text">📄 Drop iperf3 or ping slice files here<br><small>(to extract time windows!)</small></div>
+                    <input type="file" id="sliceFileInput" multiple accept=".txt,.log" style="display: none;">
+                </div>
+            </div>
+            <div class="section">
+                <div class="section-title">Time Slices (HH:MM:SS)</div>
+                <div class="time-slices" id="timeSlices"></div>
+                <button class="btn btn-secondary" onclick="addTimeSlice()">+ Add Slice Manually</button>
+            </div>
+            <button class="btn btn-primary" onclick="processLogs()">🚀 Generate Plots</button>
+            <div id="status"></div>
+        </div>
+        <div class="main-content">
+            <div class="results-header">Results</div>
+            <div class="plots-scroll-container" id="plotsContainer">
+                <div class="empty-state">No plots generated yet. Configure settings and click "Generate Plots".</div>
+            </div>
+        </div>
+    </div>
+    <script>
+        let files = [];
+        let plots = [];
+        let charts = [];
+        let iperfSliceFiles = {};
+        let pingSliceFiles = {};
+        let mode = "iperf";
+
+        const modeSelect = document.getElementById('modeSelect');
+        const windowLabel = document.getElementById('windowLabel');
+        const windowSection = document.getElementById('windowSection');
+        const logLabelIperf = document.getElementById('logLabelIperf');
+        const sliceLabelIperf = document.getElementById('sliceLabelIperf');
+        const targetLabelIP = document.getElementById('targetLabelIP');
+        const targetLabelMAC = document.getElementById('targetLabelMAC');
+
+        // SLIDER INDICATOR FIX
+        function setupSliderIndicator() {
+            const slider = document.getElementById('smoothingSlider');
+            const valueDisplay = document.getElementById('smoothingValue');
+            if (slider && valueDisplay) {
+                valueDisplay.textContent = slider.value;
+                slider.addEventListener('input', function(e) {
+                    valueDisplay.textContent = e.target.value;
+                });
+            }
+        }
+        setupSliderIndicator();
+
+        modeSelect.addEventListener('change', (e) => {
+            mode = e.target.value;
+            if (mode === "iperf") {
+                windowLabel.innerText = "Smoothing Window";
+                logLabelIperf.style.display = "";
+                sliceLabelIperf.style.display = "";
+                targetLabelIP.style.display = "";
+                targetLabelMAC.style.display = "none";
+            } else if (mode === "ping") {
+                windowLabel.innerText = "Latency Smoothing Window";
+                logLabelIperf.style.display = "";
+                sliceLabelIperf.style.display = "";
+                targetLabelIP.style.display = "";
+                targetLabelMAC.style.display = "none";
+            } else if (mode === "snr") {
+                windowLabel.innerText = "SNR Smoothing Window";
+                logLabelIperf.style.display = "";
+                sliceLabelIperf.style.display = "";
+                targetLabelIP.style.display = "none";
+                targetLabelMAC.style.display = "";
+            } else if (mode === "all") {
+                windowLabel.innerText = "All Modes Window";
+                logLabelIperf.style.display = "";
+                sliceLabelIperf.style.display = "";
+                targetLabelIP.style.display = "";
+                targetLabelMAC.style.display = "";
+            }
+            renderTimeSliceChecklist();
+            setupSliderIndicator();
+        });
+
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+
+        dropZone.addEventListener('click', () => fileInput.click());
+        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+        dropZone.addEventListener('drop', (e) => { e.preventDefault(); dropZone.classList.remove('dragover'); handleFiles(e.dataTransfer.files); });
+        fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+
+        // Slice file handling (iperf/ping)
+        const sliceDropZone = document.getElementById('sliceDropZone');
+        const sliceFileInput = document.getElementById('sliceFileInput');
+        sliceDropZone.addEventListener('click', () => sliceFileInput.click());
+        sliceDropZone.addEventListener('dragover', (e) => { e.preventDefault(); sliceDropZone.classList.add('dragover'); });
+        sliceDropZone.addEventListener('dragleave', () => sliceDropZone.classList.remove('dragover'));
+        sliceDropZone.addEventListener('drop', (e) => { e.preventDefault(); sliceDropZone.classList.remove('dragover'); handleSliceFiles(e.dataTransfer.files); });
+        sliceFileInput.addEventListener('change', (e) => handleSliceFiles(e.target.files));
+
+        function movingAverage(data, windowSize) {
+            if (windowSize <= 1) return data;
+            const result = [];
+            for (let i = 0; i < data.length; i++) {
+                const start = Math.max(0, i - Math.floor(windowSize / 2));
+                const end = Math.min(data.length, i + Math.ceil(windowSize / 2));
+                const window = data.slice(start, end);
+                const avg = window.reduce((sum, val) => sum + val.y, 0) / window.length;
+                result.push({ 
+                    ...data[i],
+                    y: avg
+                });
+            }
+            return result;
+        }
+
+        function handleFiles(fileList) {
+            for (let file of fileList) {
+                if (file.name.endsWith('.txt') || file.name.endsWith('.log')) {
+                    files.push(file);
+                    updateFileList();
+                }
+            }
+        }
+
+        async function handleSliceFiles(fileList) {
+            for (let file of fileList) {
+                if (file.name.endsWith('.txt') || file.name.endsWith('.log')) {
+                    // Detect type: iperf3 or ping slice
+                    const text = await file.text();
+                    let found = false;
+                    for (let line of text.split('\n')) {
+                        if (line.match(/[A-Za-z]{3}\s+[A-Za-z]{3}\s+\d+\s+(\d{2}:\d{2}:\d{2})\s+\d{4}.*?\d+\.\d+-\d+\.\d+\s+sec/)) {
+                            addTimeSliceFromSliceFile(text, file.name, false);
+                            found = true;
+                            iperfSliceFiles[file.name] = text;
+                            break;
+                        } else if (line.match(/(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})/)) {
+                            addTimeSliceFromSliceFile(text, file.name, true);
+                            found = true;
+                            pingSliceFiles[file.name] = text;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        showStatus('Could not parse slice file: ' + file.name, 'error');
+                    }
+                }
+            }
+        }
+
+        function addTimeSliceFromSliceFile(content, fileName, isPing) {
+            let firstTime = null, lastTime = null;
+            if (isPing) {
+                for (let line of content.split('\n')) {
+                    let m = line.match(/(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})/);
+                    if (m) {
+                        const time = m[2];
+                        if (!firstTime) firstTime = time;
+                        lastTime = time;
+                    }
+                }
+            } else {
+                for (let line of content.split('\n')) {
+                    let m = line.match(/[A-Za-z]{3}\s+[A-Za-z]{3}\s+\d+\s+(\d{2}:\d{2}:\d{2})\s+\d{4}.*?\d+\.\d+-\d+\.\d+\s+sec/);
+                    if (m) {
+                        const time = m[1];
+                        if (!firstTime) firstTime = time;
+                        lastTime = time;
+                    }
+                }
+            }
+            if (firstTime && lastTime) {
+                addTimeSlice(firstTime, lastTime, fileName);
+                showStatus(`Added slice from ${fileName}: ${firstTime} to ${lastTime}`, 'success');
+            } else {
+                showStatus('Could not find valid time range in file: ' + fileName, 'error');
+            }
+        }
+
+        function updateFileList() {
+            const fileListDiv = document.getElementById('fileList');
+            fileListDiv.innerHTML = '';
+            files.forEach((file, index) => {
+                const item = document.createElement('div');
+                item.className = 'file-item';
+                item.innerHTML = `<span>${file.name}</span><button onclick="removeFile(${index})">×</button>`;
+                fileListDiv.appendChild(item);
+            });
+        }
+
+        function removeFile(index) {
+            files.splice(index, 1);
+            updateFileList();
+        }
+
+        function renderTimeSliceChecklist() {
+            // Only show checklist in "all" mode.
+            const slices = document.querySelectorAll('.time-slice');
+            slices.forEach(slice => {
+                let checklist = slice.querySelector('.checklist');
+                if (mode === "all") {
+                    if (!checklist) {
+                        checklist = document.createElement('span');
+                        checklist.className = 'checklist';
+                        checklist.innerHTML = `
+                          <label><input type="checkbox" class="showPresence" checked>Presence</label>
+                          <label><input type="checkbox" class="showThroughput">Throughput</label>
+                          <label><input type="checkbox" class="showLatency">Latency</label>
+                          <label><input type="checkbox" class="showSnr">SNR</label>
+                        `;
+                        slice.insertBefore(checklist, slice.children[slice.children.length - 1]);
+                    }
+                } else if (checklist) {
+                    checklist.remove();
+                }
+            });
+        }
+
+        function addTimeSlice(start = '00:00:00', end = '00:00:00', sourceFile = null) {
+            const container = document.getElementById('timeSlices');
+            const slice = document.createElement('div');
+            slice.className = sourceFile ? 'time-slice from-file' : 'time-slice';
+            let label = '';
+            if (sourceFile) {
+                label = `<div class="slice-label">📄 ${sourceFile}</div>`;
+            }
+            slice.innerHTML = `${label}<input type="text" value="${start}" placeholder="HH:MM:SS"><span>to</span><input type="text" value="${end}" placeholder="HH:MM:SS"><button onclick="this.parentElement.remove()">×</button>`;
+            container.appendChild(slice);
+            renderTimeSliceChecklist();
+        }
+
+        function showStatus(message, type = 'info') {
+            const status = document.getElementById('status');
+            status.className = `status ${type}`;
+            status.textContent = message;
+        }
+
+        function getTimeSliceData(elem) {
+            const inputs = elem.querySelectorAll('input[type="text"]');
+            const start = inputs[0].value.trim();
+            const end = inputs[1].value.trim();
+            let checklist = { showPresence: true, showThroughput: false, showLatency: false, showSnr: false };
+            if (mode === "all") {
+                const checklistElem = elem.querySelector('.checklist');
+                if (checklistElem) {
+                    checklist = {
+                        showPresence: checklistElem.querySelector('.showPresence').checked,
+                        showThroughput: checklistElem.querySelector('.showThroughput').checked,
+                        showLatency: checklistElem.querySelector('.showLatency').checked,
+                        showSnr: checklistElem.querySelector('.showSnr').checked,
+                    };
+                }
+            }
+            return { start, end, checklist };
+        }
+
+        // LOG FILE PARSING
+        function parseLogFile(content, targetMACOrIP, macMode = false) {
+            const sections = content.split('/////');
+            const data = [];
+            let currentTime = null;
+            let currentTimeStr = null;
+            for (let section of sections) {
+                const timeMatch = section.match(/LocalBeginTime:\s*(\d+)\s*\(([^)]+)\)/);
+                if (timeMatch) {
+                    const timeStr = timeMatch[2];
+                    const timeClean = timeStr.split('.')[0];
+                    currentTime = new Date(timeClean);
+                    currentTimeStr = timeStr;
+                }
+                if (currentTime) {
+                    if (macMode && section.includes(targetMACOrIP)) {
+                        const lines = section.split('\n');
+                        let lastAckSNR = null, lastRxSNR = null, bssid = null;
+                        for (let line of lines) {
+                            if (line.includes(targetMACOrIP)) {
+                                const parts = line.trim().split(/\s+/);
+                                if (parts.length >= 17) {
+                                    bssid = parts[2];
+                                    lastAckSNR = parseInt(parts[15]);
+                                    lastRxSNR = parseInt(parts[16]);
+                                }
+                                break;
+                            }
+                        }
+                        data.push({
+                            time: currentTime,
+                            present: 1,
+                            timeStr: currentTimeStr,
+                            lastAckSNR, lastRxSNR, bssid
+                        });
+                    } else if (!macMode && section.includes(targetMACOrIP)) {
+                        data.push({ time: currentTime, present: 1, timeStr: currentTimeStr });
+                    } else if (macMode && (section.includes('Client Table') || section.includes('Number of Clients'))) {
+                        data.push({ time: currentTime, present: 0, timeStr: currentTimeStr, lastAckSNR: null, lastRxSNR: null, bssid: null });
+                    } else if (!macMode && section.includes('Number of Clients')) {
+                        data.push({ time: currentTime, present: 0, timeStr: currentTimeStr });
+                    }
+                }
+            }
+            return data;
+        }
+
+        function parseIperfFile(content) {
+            const lines = content.split('\n');
+            const data = [];
+            for (let line of lines) {
+                const match = line.match(/[A-Za-z]{3}\s+[A-Za-z]{3}\s+\d+\s+(\d{2}:\d{2}:\d{2})\s+\d{4}.*?\d+\.\d+-\d+\.\d+\s+sec\s+[\d.]+\s+[A-Za-z]+\s+([\d.]+)\s+Mbits/);
+                if (match) {
+                    const time = match[1];
+                    const mbps = parseFloat(match[2]);
+                    const [h, m, s] = time.split(':').map(Number);
+                    const mockDate = new Date(2000, 0, 1, h, m, s);
+                    data.push({ time: mockDate, timeStr: time, mbps: mbps, originalTime: time });
+                }
+            }
+            return data;
+        }
+        function parseLatencyFile(content) {
+            const lines = content.split('\n');
+            const data = [];
+            for (let line of lines) {
+                const match = line.match(/(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2}).*?time=([\d.]+)\s*ms/);
+                if (match) {
+                    const [year, month, day] = match[1].split('-').map(Number);
+                    const [h, m, s] = match[2].split(':').map(Number);
+                    const mockDate = new Date(year, month - 1, day, h, m, s);
+                    data.push({ time: mockDate, timeStr: match[2], latency: parseFloat(match[3]), originalTime: match[2] });
+                }
+            }
+            return data;
+        }
+        
+         // --------------- MAIN PROCESS FUNCTION -----------------
+        async function processLogs() {
+            const windowSize = parseInt(document.getElementById('smoothingSlider').value);
+            plots = [];
+            let colors = ['#2c5282', '#38a169', '#d69e2e', '#c53030', '#805ad5', '#319795', '#dd6b20', '#e53e3e'];
+            let apNames = {}; let apCounter = 1;
+            let timeSlices = [];
+            const sliceElements = document.querySelectorAll('.time-slice');
+            sliceElements.forEach((elem) => {
+                timeSlices.push(getTimeSliceData(elem));
+            });
+            if (timeSlices.length === 0) {
+                showStatus('Please add at least one time slice', 'error');
+                return;
+            }
+
+            if (mode === "iperf") {
+                const targetIP = document.getElementById('targetIP').value.trim();
+                if (!targetIP) { showStatus('Please enter a target IP address', 'error'); return; }
+                if (files.length === 0) { showStatus('Please add log files', 'error'); return; }
+                showStatus('Processing logs...', 'info');
+                const fileData = {};
+                for (let file of files) {
+                    const content = await file.text();
+                    const data = parseLogFile(content, targetIP, false);
+                    if (data.length > 0) fileData[file.name] = data;
+                }
+                const iperfData = {};
+                for (let filename in iperfSliceFiles) {
+                    const data = parseIperfFile(iperfSliceFiles[filename]);
+                    if (data.length > 0) iperfData[filename] = data;
+                }
+                for (let i = 0; i < timeSlices.length; i++) {
+                    const slice = timeSlices[i];
+                    const [startH, startM, startS] = slice.start.split(':').map(Number);
+                    const [endH, endM, endS] = slice.end.split(':').map(Number);
+                    const startTotal = startH * 3600 + startM * 60 + startS;
+                    const endTotal = endH * 3600 + endM * 60 + endS;
+                    const datasets = []; let hasData = false;
+                    Object.keys(fileData).forEach((filename, idx) => {
+                        const data = fileData[filename];
+                        const filtered = data.filter(d => {
+                            const t = d.time.getHours() * 3600 + d.time.getMinutes() * 60 + d.time.getSeconds();
+                            return t >= startTotal && t <= endTotal;
+                        });
+                        if (filtered.length > 0) {
+                            hasData = true;
+                            if (!apNames[filename]) { apNames[filename] = `AP${apCounter}`; apCounter++; }
+                            const points = filtered.map(d => ({
+                                x: (d.time.getHours() * 3600 + d.time.getMinutes() * 60 + d.time.getSeconds()) - startTotal,
+                                y: d.present,
+                                originalTime: d.timeStr
+                            }));
+                            const smoothedPoints = movingAverage(points, windowSize);
+                            datasets.push({
+                                label: apNames[filename],
+                                data: smoothedPoints,
+                                borderColor: colors[idx % colors.length],
+                                backgroundColor: colors[idx % colors.length] + '40',
+                                tension: 0.4,
+                                pointRadius: 0,
+                                pointHoverRadius: 4,
+                                borderWidth: 2.5,
+                                yAxisID: 'y'
+                            });
+                        }
+                    });
+                    let throughputIdx = 0;
+                    for (let filename in iperfData) {
+                        const data = iperfData[filename];
+                        const filtered = data.filter(d => {
+                            const t = d.time.getHours() * 3600 + d.time.getMinutes() * 60 + d.time.getSeconds();
+                            return t >= startTotal && t <= endTotal;
+                        });
+                        if (filtered.length > 0) {
+                            hasData = true;
+                            const points = filtered.map(d => ({
+                                x: (d.time.getHours() * 3600 + d.time.getMinutes() * 60 + d.time.getSeconds()) - startTotal,
+                                y: d.mbps,
+                                originalTime: d.timeStr
+                            }));
+                            const smoothedPoints = movingAverage(points, windowSize);
+                            datasets.push({
+                                label: `Throughput (${filename})`,
+                                data: smoothedPoints,
+                                borderColor: '#e63946',
+                                backgroundColor: '#e6394620',
+                                tension: 0.4,
+                                pointRadius: 0,
+                                pointHoverRadius: 4,
+                                borderWidth: 2,
+                                yAxisID: 'y1'
+                            });
+                            throughputIdx++;
+                        }
+                    }
+                    if (hasData) {
+                        plots.push({
+                            title: `Slice ${i + 1}: ${slice.start} to ${slice.end}`,
+                            datasets: datasets,
+                            targetIP: targetIP,
+                            index: i,
+                            mode: 'iperf'
+                        });
+                    }
+                }
+            }
+            else if (mode === "ping") {
+                const targetIP = document.getElementById('targetIP').value.trim();
+                if (!targetIP) { showStatus('Please enter a target IP address', 'error'); return; }
+                if (files.length === 0) { showStatus('Please add log files', 'error'); return; }
+                showStatus('Processing logs...', 'info');
+                const fileData = {};
+                for (let file of files) {
+                    const content = await file.text();
+                    const data = parseLogFile(content, targetIP, false);
+                    if (data.length > 0) fileData[file.name] = data;
+                }
+                const latencyData = {};
+                for (let filename in pingSliceFiles) {
+                    const data = parseLatencyFile(pingSliceFiles[filename]);
+                    if (data.length > 0) latencyData[filename] = data;
+                }
+                for (let i = 0; i < timeSlices.length; i++) {
+                    const slice = timeSlices[i];
+                    const [startH, startM, startS] = slice.start.split(':').map(Number);
+                    const [endH, endM, endS] = slice.end.split(':').map(Number);
+                    const startTotal = startH * 3600 + startM * 60 + startS;
+                    const endTotal = endH * 3600 + endM * 60 + endS;
+                    const datasets = []; let hasData = false;
+                    Object.keys(fileData).forEach((filename, idx) => {
+                        const data = fileData[filename];
+                        const filtered = data.filter(d => {
+                            const t = d.time.getHours() * 3600 + d.time.getMinutes() * 60 + d.time.getSeconds();
+                            return t >= startTotal && t <= endTotal;
+                        });
+                        if (filtered.length > 0) {
+                            hasData = true;
+                            if (!apNames[filename]) apNames[filename] = `AP${apCounter++}`;
+                            const points = filtered.map(d => ({
+                                x: (d.time.getHours() * 3600 + d.time.getMinutes() * 60 + d.time.getSeconds()) - startTotal,
+                                y: d.present,
+                                originalTime: d.timeStr
+                            }));
+                            datasets.push({
+                                label: apNames[filename],
+                                data: points,
+                                borderColor: colors[idx % colors.length],
+                                backgroundColor: colors[idx % colors.length] + '40',
+                                tension: 0.4,
+                                pointRadius: 0,
+                                pointHoverRadius: 4,
+                                borderWidth: 2.5,
+                                yAxisID: 'y'
+                            });
+                        }
+                    });
+                    for (let filename in latencyData) {
+                        const data = latencyData[filename];
+                        const filtered = data.filter(d => {
+                            const t = d.time.getHours() * 3600 + d.time.getMinutes() * 60 + d.time.getSeconds();
+                            return t >= startTotal && t <= endTotal;
+                        });
+                        if (filtered.length > 0) {
+                            hasData = true;
+                            const points = filtered.map(d => ({
+                                x: (d.time.getHours() * 3600 + d.time.getMinutes() * 60 + d.time.getSeconds()) - startTotal,
+                                y: d.latency,
+                                originalTime: d.timeStr
+                            }));
+                            const smoothedPoints = movingAverage(points, windowSize);
+                            datasets.push({
+                                label: `Latency (${filename})`,
+                                data: smoothedPoints,
+                                borderColor: '#e63946',
+                                backgroundColor: '#e6394620',
+                                tension: 0.4,
+                                pointRadius: 0,
+                                pointHoverRadius: 4,
+                                borderWidth: 2,
+                                yAxisID: 'y1'
+                            });
+                        }
+                    }
+                    if (hasData) {
+                        plots.push({
+                            title: `Slice ${i + 1}: ${slice.start} to ${slice.end}`,
+                            datasets: datasets,
+                            targetIP: targetIP,
+                            index: i,
+                            mode: 'ping'
+                        });
+                    }
+                }
+            }
+            else if (mode === "snr") {
+                // Presence/SNR mode for MAC, slices from iperf/ping, info from log
+                const targetMAC = document.getElementById('targetMAC').value.trim().toLowerCase();
+                if (!targetMAC) { showStatus('Please enter a target MAC address', 'error'); return; }
+                if (files.length === 0) { showStatus('Please add log files', 'error'); return; }
+                showStatus('Processing logs for SNR...', 'info');
+                const logFileData = {};
+                for (let file of files) {
+                    const content = await file.text();
+                    const data = parseLogFile(content, targetMAC, true);
+                    if (data.length > 0) logFileData[file.name] = data;
+                }
+                for (let i = 0; i < timeSlices.length; i++) {
+                    const slice = timeSlices[i];
+                    const [startH, startM, startS] = slice.start.split(':').map(Number);
+                    const [endH, endM, endS] = slice.end.split(':').map(Number);
+                    const startTotal = startH * 3600 + startM * 60 + startS;
+                    const endTotal = endH * 3600 + endM * 60 + endS;
+                    const datasets = [];
+                    let hasData = false;
+                    Object.keys(logFileData).forEach((filename, idx) => {
+                        const data = logFileData[filename];
+                        const filtered = data.filter(d => {
+                            const t = d.time.getHours() * 3600 + d.time.getMinutes() * 60 + d.time.getSeconds();
+                            return t >= startTotal && t <= endTotal;
+                        });
+                        if (filtered.length > 0) {
+                            hasData = true;
+                            if (!apNames[filename]) apNames[filename] = `AP${apCounter++}`;
+                            // Presence
+                            const points = filtered.map(d => ({
+                                x: d.time.toTimeString().split(' ')[0],
+                                y: d.present,
+                                bssid: d.bssid,
+                                lastAckSNR: d.lastAckSNR,
+                                lastRxSNR: d.lastRxSNR,
+                                originalTime: d.timeStr
+                            }));
+                            datasets.push({
+                                label: `${apNames[filename]} - Presence`,
+                                data: points,
+                                borderColor: colors[idx % colors.length],
+                                backgroundColor: colors[idx % colors.length] + '40',
+                                stepped: 'after',
+                                pointRadius: 0,
+                                pointHoverRadius: 4,
+                                borderWidth: 2.5,
+                                yAxisID: 'y'
+                            });
+                            // Last ACK SNR
+                            const ackSNRPoints = filtered.filter(d => d.lastAckSNR !== null && d.present === 1)
+                              .map(d => ({
+                                x: d.time.toTimeString().split(' ')[0],
+                                y: d.lastAckSNR,
+                                bssid: d.bssid,
+                                originalTime: d.timeStr
+                              }));
+                            if (ackSNRPoints.length > 0) {
+                              datasets.push({
+                                label: `${apNames[filename]} - Last ACK SNR`,
+                                data: ackSNRPoints,
+                                borderColor: colors[idx % colors.length],
+                                backgroundColor: colors[idx % colors.length] + '20',
+                                pointRadius: 0,
+                                pointHoverRadius: 5,
+                                borderWidth: 2.5,
+                                yAxisID: 'y1',
+                                tension: 0.4
+                              });
+                            }
+                            // Last Rx SNR
+                            const rxSNRPoints = filtered.filter(d => d.lastRxSNR !== null && d.present === 1)
+                              .map(d => ({
+                                x: d.time.toTimeString().split(' ')[0],
+                                y: d.lastRxSNR,
+                                bssid: d.bssid,
+                                originalTime: d.timeStr
+                              }));
+                            if (rxSNRPoints.length > 0) {
+                              datasets.push({
+                                label: `${apNames[filename]} - Last Rx SNR`,
+                                data: rxSNRPoints,
+                                borderColor: colors[idx % colors.length],
+                                backgroundColor: colors[idx % colors.length] + '60',
+                                pointRadius: 0,
+                                pointHoverRadius: 5,
+                                borderWidth: 2.5,
+                                borderDash: [5, 5],
+                                yAxisID: 'y1',
+                                tension: 0.4,
+                              });
+                            }
+                        }
+                    });
+                    if (hasData) {
+                        plots.push({
+                            title: `Slice ${i + 1}: ${slice.start} to ${slice.end}`,
+                            datasets: datasets,
+                            targetMAC: targetMAC,
+                            index: i,
+                            mode: 'snr'
+                        });
+                    }
+                }
+            }
+            else if (mode === "all") {
+                // All mode, same as before
+                const targetIP = document.getElementById('targetIP').value.trim();
+                const targetMAC = document.getElementById('targetMAC').value.trim().toLowerCase();
+                if (!targetIP && !targetMAC) { showStatus('Please enter a target IP or MAC address', 'error'); return; }
+                if (files.length === 0) { showStatus('Please add log files', 'error'); return; }
+                showStatus('Processing All mode...', 'info');
+                // Parse log presence and SNR data
+                const logFileDataIP = {};
+                for (let file of files) {
+                    const content = await file.text();
+                    if (targetIP) {
+                        const data = parseLogFile(content, targetIP, false);
+                        if (data.length > 0) logFileDataIP[file.name] = data;
+                    }
+                }
+                const logFileDataMAC = {};
+                if (targetMAC) {
+                    for (let file of files) {
+                        const content = await file.text();
+                        const data = parseLogFile(content, targetMAC, true);
+                        if (data.length > 0) logFileDataMAC[file.name] = data;
+                    }
+                }
+                const iperfData = {};
+                for (let filename in iperfSliceFiles) {
+                    const data = parseIperfFile(iperfSliceFiles[filename]);
+                    if (data.length > 0) iperfData[filename] = data;
+                }
+                const latencyData = {};
+                for (let filename in pingSliceFiles) {
+                    const data = parseLatencyFile(pingSliceFiles[filename]);
+                    if (data.length > 0) latencyData[filename] = data;
+                }
+                for (let i = 0; i < timeSlices.length; i++) {
+                    const slice = timeSlices[i];
+                    const [startH, startM, startS] = slice.start.split(':').map(Number);
+                    const [endH, endM, endS] = slice.end.split(':').map(Number);
+                    const startTotal = startH * 3600 + startM * 60 + startS;
+                    const endTotal = endH * 3600 + endM * 60 + endS;
+                    const datasets = [];
+                    let hasData = false;
+                    if (slice.checklist.showPresence && targetIP) {
+                        Object.keys(logFileDataIP).forEach((filename, idx) => {
+                            const data = logFileDataIP[filename];
+                            const filtered = data.filter(d => {
+                                const t = d.time.getHours() * 3600 + d.time.getMinutes() * 60 + d.time.getSeconds();
+                                return t >= startTotal && t <= endTotal;
+                            });
+                            if (filtered.length > 0) {
+                                hasData = true;
+                                if (!apNames[filename]) { apNames[filename] = `AP${apCounter}`; apCounter++; }
+                                const points = filtered.map(d => ({
+                                    x: (d.time.getHours() * 3600 + d.time.getMinutes() * 60 + d.time.getSeconds()) - startTotal,
+                                    y: d.present,
+                                    originalTime: d.timeStr
+                                }));
+                                datasets.push({
+                                    label: apNames[filename],
+                                    data: movingAverage(points, windowSize),
+                                    borderColor: colors[idx % colors.length],
+                                    backgroundColor: colors[idx % colors.length] + '40',
+                                    tension: 0.4,
+                                    pointRadius: 0,
+                                    pointHoverRadius: 4,
+                                    borderWidth: 2.5,
+                                    yAxisID: 'y'
+                                });
+                            }
+                        });
+                    }
+                    if (slice.checklist.showThroughput) {
+                        let throughputIdx = 0;
+                        for (let filename in iperfData) {
+                            const data = iperfData[filename];
+                            const filtered = data.filter(d => {
+                                const t = d.time.getHours() * 3600 + d.time.getMinutes() * 60 + d.time.getSeconds();
+                                return t >= startTotal && t <= endTotal;
+                            });
+                            if (filtered.length > 0) {
+                                hasData = true;
+                                const points = filtered.map(d => ({
+                                    x: (d.time.getHours() * 3600 + d.time.getMinutes() * 60 + d.time.getSeconds()) - startTotal,
+                                    y: d.mbps,
+                                    originalTime: d.timeStr
+                                }));
+                                datasets.push({
+                                    label: `Throughput (${filename})`,
+                                    data: movingAverage(points, windowSize),
+                                    borderColor: '#e63946',
+                                    backgroundColor: '#e6394620',
+                                    tension: 0.4,
+                                    pointRadius: 0,
+                                    pointHoverRadius: 4,
+                                    borderWidth: 2,
+                                    yAxisID: 'y1'
+                                });
+                                throughputIdx++;
+                            }
+                        }
+                    }
+                    if (slice.checklist.showLatency) {
+                        for (let filename in latencyData) {
+                            const data = latencyData[filename];
+                            const filtered = data.filter(d => {
+                                const t = d.time.getHours() * 3600 + d.time.getMinutes() * 60 + d.time.getSeconds();
+                                return t >= startTotal && t <= endTotal;
+                            });
+                            if (filtered.length > 0) {
+                                hasData = true;
+                                const points = filtered.map(d => ({
+                                    x: (d.time.getHours() * 3600 + d.time.getMinutes() * 60 + d.time.getSeconds()) - startTotal,
+                                    y: d.latency,
+                                    originalTime: d.timeStr
+                                }));
+                                datasets.push({
+                                    label: `Latency (${filename})`,
+                                    data: movingAverage(points, windowSize),
+                                    borderColor: '#e63946',
+                                    backgroundColor: '#e6394620',
+                                    tension: 0.4,
+                                    pointRadius: 0,
+                                    pointHoverRadius: 4,
+                                    borderWidth: 2,
+                                    yAxisID: 'y2'
+                                });
+                            }
+                        }
+                    }
+                    if (slice.checklist.showSnr && targetMAC) {
+                        Object.keys(logFileDataMAC).forEach((filename, idx) => {
+                            const data = logFileDataMAC[filename];
+                            const filtered = data.filter(d => {
+                                const t = d.time.getHours() * 3600 + d.time.getMinutes() * 60 + d.time.getSeconds();
+                                return t >= startTotal && t <= endTotal;
+                            });
+                            if (filtered.length > 0) {
+                                hasData = true;
+                                if (!apNames[filename]) apNames[filename] = `AP${apCounter++}`;
+                                const points = filtered.map(d => ({
+                                    x: d.time.toTimeString().split(' ')[0],
+                                    y: d.present,
+                                    bssid: d.bssid,
+                                    lastAckSNR: d.lastAckSNR,
+                                    lastRxSNR: d.lastRxSNR,
+                                    originalTime: d.timeStr
+                                }));
+                                datasets.push({
+                                    label: `${apNames[filename]} - SNR Presence`,
+                                    data: points,
+                                    borderColor: colors[idx % colors.length],
+                                    backgroundColor: colors[idx % colors.length] + '40',
+                                    stepped: 'after',
+                                    pointRadius: 0,
+                                    pointHoverRadius: 4,
+                                    borderWidth: 2.5,
+                                    yAxisID: 'y'
+                                });
+                                // ACK, RX SNR
+                                const ackSNRPoints = filtered.filter(d => d.lastAckSNR !== null && d.present === 1)
+                                  .map(d => ({
+                                    x: d.time.toTimeString().split(' ')[0],
+                                    y: d.lastAckSNR,
+                                    bssid: d.bssid,
+                                    originalTime: d.timeStr
+                                  }));
+                                if (ackSNRPoints.length > 0) {
+                                  datasets.push({
+                                      label: `${apNames[filename]} - Last ACK SNR`,
+                                      data: ackSNRPoints,
+                                      borderColor: colors[idx % colors.length],
+                                      backgroundColor: colors[idx % colors.length] + '20',
+                                      pointRadius: 0,
+                                      pointHoverRadius: 5,
+                                      borderWidth: 2.5,
+                                      yAxisID: 'y3',
+                                      tension: 0.4
+                                  });
+                                }
+                                const rxSNRPoints = filtered.filter(d => d.lastRxSNR !== null && d.present === 1)
+                                  .map(d => ({
+                                    x: d.time.toTimeString().split(' ')[0],
+                                    y: d.lastRxSNR,
+                                    bssid: d.bssid,
+                                    originalTime: d.timeStr
+                                  }));
+                                if (rxSNRPoints.length > 0) {
+                                  datasets.push({
+                                      label: `${apNames[filename]} - Last Rx SNR`,
+                                      data: rxSNRPoints,
+                                      borderColor: colors[idx % colors.length],
+                                      backgroundColor: colors[idx % colors.length] + '60',
+                                      pointRadius: 0,
+                                      pointHoverRadius: 5,
+                                      borderWidth: 2.5,
+                                      borderDash: [5, 5],
+                                      yAxisID: 'y3',
+                                      tension: 0.4,
+                                  });
+                                }
+                            }
+                        });
+                    }
+                    if (hasData) {
+                        plots.push({
+                            title: `Slice ${i + 1}: ${slice.start} to ${slice.end}`,
+                            datasets: datasets,
+                            targetIP: targetIP,
+                            targetMAC: targetMAC,
+                            index: i,
+                            mode: "all"
+                        });
+                    }
+                }
+            }
+
+            if (plots.length > 0) {
+                displayAllPlots();
+                showStatus(`Generated ${plots.length} plot(s)`, 'success');
+            } else {
+                showStatus('No data found in specified time slices', 'error');
+            }
+        }
+
+        function displayAllPlots() {
+            const container = document.getElementById('plotsContainer');
+            container.innerHTML = '';
+            charts.forEach(chart => chart.destroy());
+            charts = [];
+            plots.forEach((plot, index) => {
+                const plotItem = document.createElement('div');
+                plotItem.className = 'plot-item';
+                plotItem.innerHTML = `<div class="plot-header"><div class="plot-title">${plot.title}</div><button class="export-btn" onclick="exportPlot(${index})">💾 Export PNG</button></div><div class="plot-canvas-wrapper"><canvas id="plotCanvas${index}"></canvas></div>`;
+                container.appendChild(plotItem);
+                const ctx = document.getElementById(`plotCanvas${index}`).getContext('2d');
+                let chartOptions;
+                if (plot.mode === "iperf") {
+                    chartOptions = {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: { mode: 'index', intersect: false },
+                        plugins: {
+                            title: { display: true, text: `IP ${plot.targetIP} Presence & Throughput`, font: { size: 14, weight: 'bold' } },
+                            legend: { position: 'top' },
+                            tooltip: {
+                                callbacks: {
+                                    title: function(context) {
+                                        return "Timestamp: " + (context[0].raw.originalTime || context[0].label);
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            y: { type: 'linear', display: true, position: 'left', min: -0.1, max: 1.5, ticks: { stepSize: 1, callback: v => v === 0 ? 'Absent' : v === 1 ? 'Present' : '' }, title: {display:true,text:'Connection Status',font:{weight:'bold'}} },
+                            y1: { type: 'linear', display: true, position: 'right', title: {display:true,text:'Throughput (Mbps)',font:{weight:'bold'}}, grid: { drawOnChartArea: false }},
+                            x: { type: 'linear', title: {display:true,text:'Seconds (elapsed time)',font:{weight:'bold'}}, ticks:{stepSize:10} }
+                        }
+                    };
+                } else if (plot.mode === "ping") {
+                    chartOptions = {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: { mode: 'index', intersect: false },
+                        plugins: {
+                            title: { display: true, text: `IP ${plot.targetIP} Presence & Latency`, font: { size: 14, weight: 'bold' } },
+                            legend: { position: 'top' },
+                            tooltip: { callbacks: { title: function(context) { return "Timestamp: " + (context[0].raw.originalTime || context[0].label); } } }
+                        },
+                        scales: {
+                            y: { type: 'linear', display: true, position: 'left', min: -0.1, max: 1.5, ticks: { stepSize: 1, callback: v => v === 0 ? 'Absent' : v === 1 ? 'Present' : '' }, title: {display:true,text:'Connection Status',font:{weight:'bold'}} },
+                            y1: { type: 'linear', display: true, position: 'right', title: {display:true,text:'Latency (ms)',font:{weight:'bold'}}, grid: { drawOnChartArea: false }},
+                            x: { type: 'linear', title: {display:true,text:'Seconds (elapsed time)',font:{weight:'bold'}}, ticks:{stepSize:10} }
+                        }
+                    };
+                } else if (plot.mode === "snr") {
+                    chartOptions = {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: { mode: 'index', intersect: false },
+                        plugins: {
+                            title: { display: true, text: `MAC ${plot.targetMAC} Presence & SNR`, font: { size: 14, weight: 'bold' } },
+                            legend: { position: 'top' },
+                            tooltip: {
+                                callbacks: {
+                                    afterLabel: function(context) {
+                                        const dataPoint = context.raw;
+                                        let info = [];
+                                        if (dataPoint.bssid) info.push(`BSSID: ${dataPoint.bssid}`);
+                                        if (dataPoint.lastAckSNR !== undefined) info.push(`ACK SNR: ${dataPoint.lastAckSNR}`);
+                                        if (dataPoint.lastRxSNR !== undefined) info.push(`Rx SNR: ${dataPoint.lastRxSNR}`);
+                                        return info.length > 0 ? info.join('\n') : '';
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            y: { type: 'linear', display: true, position: 'left', min: -0.1, max: 1.5, ticks: { stepSize: 1, callback: v => v === 0 ? 'Absent' : v === 1 ? 'Present' : '' }, title: {display:true,text:'Presence',font:{weight:'bold'}} },
+                            y1: { type: 'linear', display: true, position: 'right', min: 0, title: {display:true,text:'SNR (dB)',font:{weight:'bold'}}, grid: {drawOnChartArea:false}},
+                            x: { type: 'category', title: {display:true,text:'Time',font:{weight:'bold'}} }
+                        }
+                    };
+                } else if (plot.mode === "all") {
+                    chartOptions = {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: { mode: 'index', intersect: false },
+                        plugins: {
+                            title: { display: true, text: `All Data`, font: { size: 14, weight: 'bold' } },
+                            legend: { position: 'top' },
+                            tooltip: {
+                                callbacks: {
+                                    title: function(context) {
+                                        return "Timestamp: " + (context[0].raw.originalTime || context[0].label);
+                                    },
+                                    afterLabel: function(context) {
+                                        const dataPoint = context.raw;
+                                        let info = [];
+                                        if (dataPoint.bssid) info.push(`BSSID: ${dataPoint.bssid}`);
+                                        if (dataPoint.lastAckSNR !== undefined) info.push(`ACK SNR: ${dataPoint.lastAckSNR}`);
+                                        if (dataPoint.lastRxSNR !== undefined) info.push(`Rx SNR: ${dataPoint.lastRxSNR}`);
+                                        return info.length > 0 ? info.join('\n') : '';
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            y: { type: 'linear', display: true, position: 'left', min: -0.1, max: 1.5, ticks: { stepSize: 1, callback: v => v === 0 ? 'Absent' : v === 1 ? 'Present' : '' }, title: {display:true,text:'Presence',font:{weight:'bold'}} },
+                            y1: { type: 'linear', display: true, position: 'right', title: {display:true,text:'Throughput (Mbps)',font:{weight:'bold'}}, grid: {drawOnChartArea:false} },
+                            y2: { type: 'linear', display: true, position: 'right', title: {display:true,text:'Latency (ms)',font:{weight:'bold'}}, grid: {drawOnChartArea:false} },
+                            y3: { type: 'linear', display: true, position: 'right', title: {display:true,text:'SNR (dB)',font:{weight:'bold'}}, grid: {drawOnChartArea:false} },
+                            x: { type: 'linear', title: {display:true,text:'Time',font:{weight:'bold'}} }
+                        }
+                    };
+                }
+                const chart = new Chart(ctx, {
+                    type: 'line',
+                    data: { datasets: plot.datasets },
+                    options: chartOptions
+                });
+                charts.push(chart);
+            });
+        }
+
+        function exportPlot(index) {
+            if (index >= charts.length) return;
+            const canvas = document.getElementById(`plotCanvas${index}`);
+            const url = canvas.toDataURL('image/png');
+            const link = document.createElement('a');
+            link.download = `plot_slice_${index + 1}.png`;
+            link.href = url;
+            link.click();
+        }
+
+       
+    </script>
+</body>
+</html>
