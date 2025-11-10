@@ -38,8 +38,8 @@
 
 ### Reminder Tasks 
 * [x] Getting started with 5G Mid-band modem
-* [] Test the script and modify it according to the experiment
-* [] Change the Tx power back to 5dbm to run the 2AP experiment
+* [ ] Test the script and modify it according to the experiment
+* [ ] Change the Tx power back to 5dbm to run the 2AP experiment
 
 
 
