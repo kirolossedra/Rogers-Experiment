@@ -32,7 +32,7 @@
 * [x] Only generating the logs one time per experiment instead of generating multiple files for each AP
 * [x] RF Improvement placing on plastic shelf instead of placing directly on concrete
 * [x] Decreasing Tx power to allow for roaming to happen in 2AP experiment
-* [ ] Prepare downlink and uplink scripts both with showing retr
+* [ ] Prepare downlink and uplink scripts both with showing retr(retr is already there)
 * [x] Update the commant list to include noise floor logging
 
 
