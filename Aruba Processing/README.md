@@ -3,7 +3,7 @@
 
 Each one of these HTML files is specialized to work with certain files related to **Aruba logs**.
 
-The **main Aruba logs** are collected from **two Access Points (APs)**.
+The **main Aruba logs** are collected from **two Access Points (APs)** based on **commands.txt** file in this directory.
 The **slicing of the large Aruba log** is done using either **iPerf logs** or **latency logs**, based on their **timestamps** as seen below.
 
 These slicing scripts are located in the following directory:
