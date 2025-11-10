@@ -6,7 +6,7 @@
 - Then, try pinging the Husky’s IP to verify connectivity:
   ```bash
   ping 192.168.131.1
-````
+  ```
 
 * SSH into the Husky:
 
