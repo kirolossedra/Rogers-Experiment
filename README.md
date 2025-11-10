@@ -1,6 +1,4 @@
-Here’s your markdown cleaned up, formatted properly, and consistent in style:
 
-````markdown
 # Rogers Experiment
 
 ### Network Setup
@@ -16,7 +14,7 @@ Here’s your markdown cleaned up, formatted properly, and consistent in style:
   ssh administrator@192.168.131.1
   ```
 
----
+
 
 ### Rogers Experiment To-Do
 
