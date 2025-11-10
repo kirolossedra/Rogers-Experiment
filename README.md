@@ -1,7 +1,7 @@
 
 # Rogers Experiment
 
-### Network Setup
+### Husky Setup
 - Set your Ethernet IP to the same subnet as the Husky (e.g., **192.168.131.x**).
 - Then, try pinging the Husky’s IP to verify connectivity:
   ```bash
@@ -13,8 +13,7 @@
   ```bash
   ssh administrator@192.168.131.1
   ```
-
-
+* Turn on the Joystick controller and it will connect to the robot
 
 ### Rogers Experiment To-Do
 
