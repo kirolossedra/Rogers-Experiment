@@ -1,1 +1,1 @@
-
+What is interesting happens in wireshark, we can see first Beaconing and then after association happens with all the stations, starting to send RTS CTS with eachone(multicast unicast) which induces stress and reduces the allocated BW per stations on averaage as we can see in the plot
