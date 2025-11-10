@@ -25,6 +25,20 @@
 
 ---
 
+
+### Improvements
+
+* [x] Use unified timestamps in all files, logs, latency, iperf
+* [x] RF Improvement placing on plastic shelf instead of placing directly on concrete
+* [x] Decreasing Tx power to allow for roaming to happen in 2AP experiment
+* [ ] Prepare downlink and uplink scripts both with showing retr
+* [ ] Update the commant list to include noise floor logging
+* [ ] Perform the **5G test twice**: once for uplink and once for downlink.
+
+
+
+
+
 ### Broadcast Paper To-Do
 
 * [ ] Re-run **NS-3 simulations** for the broadcast project, this time including **impairments**.
