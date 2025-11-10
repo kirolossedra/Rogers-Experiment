@@ -32,7 +32,7 @@
 * [x] RF Improvement placing on plastic shelf instead of placing directly on concrete
 * [x] Decreasing Tx power to allow for roaming to happen in 2AP experiment
 * [ ] Prepare downlink and uplink scripts both with showing retr
-* [ ] Update the commant list to include noise floor logging
+* [x] Update the commant list to include noise floor logging
 
 
 
