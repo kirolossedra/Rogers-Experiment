@@ -17,17 +17,13 @@ From the **root directory**, the folder hierarchy looks like this:
 ```
 /
 ├── Linux/
-│   ├── slice_by_iperf.py
-│   ├── slice_by_latency.py
+│   ├── iperf.py
+│   ├── ping.py
 │   └── ...
-├── ArubaLogs/
-│   ├── AP1/
-│   ├── AP2/
-│   └── merged/
-├── HTML/
-│   ├── iperf_analysis.html
-│   ├── latency_analysis.html
-│   └── main_dashboard.html
+├── Aruba Processing/
+│   ├── iperf.html
+│   ├── latency.html
+│   └── ...
 └── README.md
 ```
 
