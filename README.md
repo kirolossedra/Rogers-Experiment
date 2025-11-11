@@ -17,7 +17,7 @@
 
 ### Rogers Experiment To-Do
 
-* [ ] Try out the mid-range 5G modem to do a sanity check for the AT commands and scripts.
+* [x] Try out the mid-range 5G modem to do a sanity check for the AT commands and scripts.
   → Afterward, list here a set of useful AT commands.
 * [ ] Redo the **2 AP** setup with uplink, downlink, and noise floor measurement script.
 * [ ] Redo the **single AP** setup with uplink, downlink, and noise floor measurement script.
