@@ -204,3 +204,5 @@ AT+QENG="servingcell"
 ---
 
 
+the use of cloning this and making it, then using it using the script is adding more DL bandwidth
+
