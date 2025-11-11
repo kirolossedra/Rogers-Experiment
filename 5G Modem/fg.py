@@ -1,16 +1,25 @@
 #!/usr/bin/env python3
 import subprocess
 import re
-import pickle
 import time
 import json
 import os
 
+# Create logs folder if it doesn't exist
+if not os.path.exists("logs"):
+    os.makedirs("logs")
+    print("Created logs folder")
+
+# Define the log file path
+log_file = "logs/modem_status.json"
+
+# Load existing data if file exists
 try:
-    data = pickle.load(open("modem_status.pickle","rb"))
-    print("Loaded old data, size: ",len(data))
+    with open(log_file, "r") as f:
+        data = json.load(f)
+    print("Loaded old data, size: ", len(data))
 except Exception as ex:
-    print("Old data could not be loaded",str(ex))
+    print("Old data could not be loaded", str(ex))
     data = []
 
 arfcn_seq = [638016]
@@ -120,12 +129,14 @@ while True:
     try:
         data.append(blob)
         
-        # Save every second with timestamp in filename
-        from datetime import datetime
-        timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"modem_status_{timestamp_str}.pickle"
-        pickle.dump(data, open(filename, "wb"))
-        print(f"Saved to {filename}", flush=True)
+        # Save to the single JSON file
+        with open(log_file, "w") as f:
+            json.dump(data, f, indent=2)
+        
+        # Set file permissions to 666 (read/write for everyone)
+        os.chmod(log_file, 0o666)
+        
+        print(f"Appended to {log_file} (total entries: {len(data)})", flush=True)
     except Exception as ex:
         print("Exception",ex, flush=True)
     
