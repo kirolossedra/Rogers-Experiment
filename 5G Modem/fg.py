@@ -119,20 +119,14 @@ while True:
     
     try:
         data.append(blob)
-        if counter % 300 == 0: # 300s
-            cutoff_timestamp = time.time() - 3600 * 24 * 14
-            data = list(filter(lambda x: x['timestamp'] > cutoff_timestamp, data))
-            #print("reduced data size: ",len(new_data))
-            pickle.dump(data,open("modem_status.pickle.tmp","wb"))
-            import os
-            os.rename("modem_status.pickle.tmp","modem_status.pickle") # overwrite old db
         
-        if counter % 300 == 0: # 300s
-            subprocess.check_output("./teleop_plotter.py modem_status.pickle", shell=True)
-            subprocess.check_output("curl -s -T bandwidth_over_time_of_day.pdf https://robohub.eng.uwaterloo.ca/share/",shell=True)
-            subprocess.check_output("curl -s -T bandwidth_over_time.pdf https://robohub.eng.uwaterloo.ca/share/",shell=True)
+        # Save every second with timestamp in filename
+        from datetime import datetime
+        timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"modem_status_{timestamp_str}.pickle"
+        pickle.dump(data, open(filename, "wb"))
+        print(f"Saved to {filename}", flush=True)
     except Exception as ex:
         print("Exception",ex, flush=True)
     
-    time.sleep(1) # TODO: fixed wait
-    counter = counter + 1
+    time.sleep(1)
