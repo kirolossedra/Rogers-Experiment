@@ -49,6 +49,9 @@ else
     SELECTED_SCRIPT="down.py"
 fi
 
+# Copy fg.py
+cp "$RUNNING_DIR/fg.py" "$TARGET_DIR/"
+
 # ============================
 # STEP 4: Launch Python tasks with delay in separate terminals
 # ============================
@@ -56,13 +59,15 @@ fi
 echo "Launching new terminal windows..."
 
 # Terminal for ping.py
-gnome-terminal -- bash -c "echo 'Sleeping 10...'; sleep 30; python3 '$TARGET_DIR/ping.py'; exec bash"
+gnome-terminal -- bash -c "echo 'Sleeping 30...'; sleep 20; python3 '$TARGET_DIR/ping.py'; exec bash"
 
 # Terminal for up.py or down.py
-gnome-terminal -- bash -c "echo 'Sleeping 10...'; sleep 30; python3 '$TARGET_DIR/$SELECTED_SCRIPT'; exec bash"
+gnome-terminal -- bash -c "echo 'Sleeping 30...'; sleep 20; python3 '$TARGET_DIR/$SELECTED_SCRIPT'; exec bash"
+
+# Terminal for fg.py
+gnome-terminal -- bash -c "echo 'Sleeping 30...'; sleep 20; python3 '$TARGET_DIR/fg.py'; exec bash"
 
 # Extra empty terminal
 gnome-terminal -- bash -c "echo 'Empty terminal ready'; exec bash"
 
 echo "✅ All done — terminals launched with delay."
-
