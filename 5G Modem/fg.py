@@ -4,14 +4,16 @@ import re
 import time
 import json
 import os
+from datetime import datetime
 
 # Create logs folder if it doesn't exist
 if not os.path.exists("logs"):
     os.makedirs("logs")
     print("Created logs folder")
 
-# Define the log file path
-log_file = "logs/modem_status.json"
+# Create timestamped log file name
+timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+log_file = f"logs/modem_status_{timestamp_str}.json"
 
 # Load existing data if file exists
 try:
@@ -81,7 +83,7 @@ class ModemWrapper(object):
             import re
             if raw.find("LTE")!=-1:
                 res1 = re.match(r'\+QENG: "LTE","(?P<is_tdd>.*?)",(?P<MCC>.*?),(?P<MNC>.*?),(?P<cellid>.*?),(?P<pcid>.*?),(?P<earfcn>.*?),(?P<freq_band_ind>.*?),(?P<UL_bandwidth>.*?),(?P<DL_bandwidth>.*?),(?P<TAC>.*?),(?P<RSRP>.*?),(?P<RSRQ>.*?),(?P<RSSI>.*?),(?P<SINR>.*?),(?P<CQI>.*?),(?P<tx_power>.*?),(?P<SRXLEV>.*?)',raw)
-                res2 = re.match(r'\+QENG: "servingcell","NOCONN","LTE","(?P<is_tdd>.*?)",(?P<MCC>.*?),(?P<MNC>.*?),(?P<cellid>.*?),(?P<pcid>.*?),(?P<earfcn>.*?),(?P<freq_band_ind>.*?),(?P<UL_bandwidth>.*?),(?P<DL_bandwidth>.*?),(?P<TAC>.*?),(?P<RSRP>.*?),(?P<RSRQ>.*?),(?P<RSSI>.*?),(?P<SINR>.*?),(?P<CQI>.*?),(?P<tx_power>.*?),(?P<SRXLEV>.*?),(?P<dltime>.*?)',raw)
+                res2 = re.match(r'\+QENG: "servingcell","NOCONN","LTE","(?P<is_tdd>.*?)",(?P<MCC>.*?),(?P<MNC>.*?),(?P<cellid>.*?),(?P<pcid>.*?),(?P<earfcn>.*?),(?P<freq_band_ind>.*?),(?P<UL_bandwidth>.*?),(?P<DL_bandwidth>.*?),(?P<TAC>.*?),(?P<RSRP>.*?),(?P<RSRQ>.*?),(?P<RSSI>.*?),(?P<CQI>.*?),(?P<tx_power>.*?),(?P<SRXLEV>.*?),(?P<dltime>.*?)',raw)
                 if not res1 and not res2:
                     print("Failed to match response: \""+raw+"\"")
                     continue
@@ -129,7 +131,7 @@ while True:
     try:
         data.append(blob)
         
-        # Save to the single JSON file
+        # Append to the timestamped JSON file
         with open(log_file, "w") as f:
             json.dump(data, f, indent=2)
         
