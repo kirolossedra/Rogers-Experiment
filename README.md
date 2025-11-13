@@ -35,6 +35,7 @@
 * [x] Decreasing Tx power to allow for roaming to happen in 2AP experiment
 * [x] Prepare downlink and uplink scripts both with showing retr(retr is already there)
 * [x] Update the commant list to include noise floor logging
+* [ ] Run even the uplink with the 2Gigs switch to see if this makes a difference
 
 
 ### Reminder Tasks 
