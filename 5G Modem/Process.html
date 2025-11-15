@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Log Analyzer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 30px;
+        }
+        h1 {
+            color: #667eea;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+        }
+        .upload-section {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+        }
+        .file-input-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #333;
+        }
+        input[type="file"] {
+            display: block;
+            width: 100%;
+            padding: 10px;
+            border: 2px dashed #667eea;
+            border-radius: 8px;
+            background: white;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        input[type="file"]:hover {
+            border-color: #764ba2;
+            background: #f0f0ff;
+        }
+        .options {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .option-group {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+        }
+        select {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #667eea;
+            border-radius: 5px;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            margin-top: 10px;
+        }
+        .checkbox-group input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            margin-right: 10px;
+            cursor: pointer;
+        }
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            font-size: 16px;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: transform 0.2s;
+            display: block;
+            margin: 20px auto;
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .status {
+            text-align: center;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 8px;
+            display: none;
+        }
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .charts-container {
+            margin-top: 30px;
+        }
+        .chart-wrapper {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .chart-title {
+            font-size: 1.3em;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        canvas {
+            max-height: 400px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 Network Log Analyzer</h1>
+        
+        <div class="upload-section">
+            <div class="file-input-group">
+                <label for="jsonFile">Upload JSON Log File:</label>
+                <input type="file" id="jsonFile" accept=".json">
+            </div>
+            
+            <div class="file-input-group">
+                <label for="testFiles">Upload iperf3 or ping Files (multiple):</label>
+                <input type="file" id="testFiles" accept=".txt,.log" multiple>
+            </div>
+            
+            <div class="options">
+                <div class="option-group">
+                    <label for="testType">Test File Type:</label>
+                    <select id="testType">
+                        <option value="iperf3">iperf3</option>
+                        <option value="ping">ping</option>
+                    </select>
+                </div>
+                
+                <div class="option-group">
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="showThroughput">
+                        <label for="showThroughput">Show Throughput on Same Plot</label>
+                    </div>
+                </div>
+            </div>
+            
+            <button id="processBtn" onclick="processData()">Process Data</button>
+        </div>
+        
+        <div id="status" class="status"></div>
+        
+        <div id="chartsContainer" class="charts-container"></div>
+    </div>
+
+    <script>
+        let jsonData = null;
+        let testFiles = [];
+
+        document.getElementById('jsonFile').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                try {
+                    const text = await file.text();
+                    // Handle both array format and newline-delimited JSON
+                    if (text.trim().startsWith('[')) {
+                        jsonData = JSON.parse(text);
+                    } else {
+                        // Parse newline-delimited JSON
+                        jsonData = text.trim().split('\n')
+                            .filter(line => line.trim())
+                            .map(line => {
+                                // Remove trailing comma if exists
+                                const cleanLine = line.trim().replace(/,$/, '');
+                                return JSON.parse(cleanLine);
+                            });
+                    }
+                    showStatus('JSON file loaded successfully!', 'success');
+                } catch (err) {
+                    showStatus('Error parsing JSON file: ' + err.message, 'error');
+                }
+            }
+        });
+
+        document.getElementById('testFiles').addEventListener('change', async (e) => {
+            testFiles = [];
+            for (const file of e.target.files) {
+                const text = await file.text();
+                testFiles.push({ name: file.name, content: text });
+            }
+            showStatus(`${testFiles.length} test file(s) loaded!`, 'success');
+        });
+
+        function showStatus(message, type) {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = `status ${type}`;
+            status.style.display = 'block';
+            setTimeout(() => status.style.display = 'none', 5000);
+        }
+
+        function parseTimestamp(ts) {
+            // Convert Unix timestamp to Toronto time
+            const date = new Date(ts * 1000);
+            return date.toLocaleString('en-CA', { 
+                timeZone: 'America/Toronto',
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+            });
+        }
+
+        function parseIperf3Timestamps(content) {
+            const lines = content.split('\n');
+            let startTime = null;
+            let endTime = null;
+            const throughputData = [];
+
+            for (const line of lines) {
+                const match = line.match(/^(\w{3}\s+\w{3}\s+\d+\s+\d{2}:\d{2}:\d{2}\s+\d{4})/);
+                if (match) {
+                    const dateStr = match[1];
+                    const date = new Date(dateStr);
+                    const timestamp = date.getTime() / 1000;
+                    
+                    if (!startTime) startTime = timestamp;
+                    endTime = timestamp;
+
+                    // Extract throughput (Mbits/sec)
+                    const throughputMatch = line.match(/(\d+\.?\d*)\s+Mbits\/sec/);
+                    if (throughputMatch) {
+                        throughputData.push({
+                            timestamp: timestamp,
+                            throughput: parseFloat(throughputMatch[1])
+                        });
+                    }
+                }
+            }
+
+            return { startTime, endTime, throughputData };
+        }
+
+        function parsePingTimestamps(content) {
+            const lines = content.split('\n');
+            let startTime = null;
+            let endTime = null;
+            const latencyData = [];
+
+            for (const line of lines) {
+                const match = line.match(/^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})/);
+                if (match) {
+                    const dateStr = match[1];
+                    const date = new Date(dateStr);
+                    const timestamp = date.getTime() / 1000;
+                    
+                    if (!startTime) startTime = timestamp;
+                    endTime = timestamp;
+
+                    // Extract latency (time=XX ms)
+                    const latencyMatch = line.match(/time=(\d+\.?\d*)\s*ms/);
+                    if (latencyMatch) {
+                        latencyData.push({
+                            timestamp: timestamp,
+                            latency: parseFloat(latencyMatch[1])
+                        });
+                    }
+                }
+            }
+
+            return { startTime, endTime, latencyData };
+        }
+
+        function sliceLogData(logData, startTime, endTime) {
+            return logData.filter(entry => {
+                const ts = entry.timestamp;
+                return ts >= startTime && ts <= endTime;
+            });
+        }
+
+        function createChart(canvasId, label, data, timestamps, color, yAxisLabel, additionalDataset = null, isSinr = false) {
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            
+            const datasets = [{
+                label: label,
+                data: data,
+                borderColor: color,
+                backgroundColor: color + '20',
+                tension: 0.4,
+                fill: true,
+                borderWidth: 2,
+                pointRadius: 0,
+                yAxisID: 'y'
+            }];
+
+            const scales = {
+                x: {
+                    title: { display: true, text: 'Time (seconds)' },
+                    grid: { color: 'rgba(0,0,0,0.05)' }
+                },
+                y: {
+                    title: { display: true, text: yAxisLabel },
+                    grid: { color: 'rgba(0,0,0,0.1)' },
+                    position: 'left',
+                    ticks: isSinr ? {
+                        callback: function(value) {
+                            return value === -1 ? '-∞' : value;
+                        }
+                    } : {}
+                }
+            };
+
+            if (additionalDataset) {
+                datasets.push({
+                    label: additionalDataset.label,
+                    data: additionalDataset.data,
+                    borderColor: additionalDataset.color,
+                    backgroundColor: additionalDataset.color + '20',
+                    tension: 0.4,
+                    fill: false,
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    yAxisID: 'y1'
+                });
+
+                scales.y1 = {
+                    title: { display: true, text: additionalDataset.yAxisLabel },
+                    grid: { drawOnChartArea: false },
+                    position: 'right'
+                };
+            }
+
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: timestamps,
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
+                    },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        }
+                    },
+                    scales: scales
+                }
+            });
+        }
+
+        function processData() {
+            if (!jsonData || testFiles.length === 0) {
+                showStatus('Please upload both JSON log and test files!', 'error');
+                return;
+            }
+
+            const testType = document.getElementById('testType').value;
+            const showThroughput = document.getElementById('showThroughput').checked;
+            const chartsContainer = document.getElementById('chartsContainer');
+            chartsContainer.innerHTML = '';
+
+            let chartIndex = 0;
+
+            testFiles.forEach(testFile => {
+                let timeInfo, performanceData;
+                
+                if (testType === 'iperf3') {
+                    timeInfo = parseIperf3Timestamps(testFile.content);
+                    performanceData = timeInfo.throughputData;
+                } else {
+                    timeInfo = parsePingTimestamps(testFile.content);
+                    performanceData = timeInfo.latencyData;
+                }
+
+                if (!timeInfo.startTime || !timeInfo.endTime) {
+                    showStatus(`Could not parse timestamps from ${testFile.name}`, 'error');
+                    return;
+                }
+
+                const slicedData = sliceLogData(jsonData, timeInfo.startTime, timeInfo.endTime);
+                
+                if (slicedData.length === 0) {
+                    showStatus(`No log data found for time range in ${testFile.name}`, 'error');
+                    return;
+                }
+
+                const startTimeStr = parseTimestamp(timeInfo.startTime);
+                const metrics = ['rsrp', 'sinr', 'rsrq', 'NR_DL_bandwidth'];
+                const colors = ['#667eea', '#f093fb', '#4facfe', '#43e97b'];
+                const labels = ['RSRP (dBm)', 'SINR (dB)', 'RSRQ (dB)', 'NR DL Bandwidth'];
+
+                metrics.forEach((metric, idx) => {
+                    const wrapper = document.createElement('div');
+                    wrapper.className = 'chart-wrapper';
+                    
+                    const title = document.createElement('div');
+                    title.className = 'chart-title';
+                    title.textContent = `${labels[idx]} - ${startTimeStr} (${testFile.name})`;
+                    wrapper.appendChild(title);
+
+                    const canvas = document.createElement('canvas');
+                    canvas.id = `chart_${chartIndex++}`;
+                    wrapper.appendChild(canvas);
+                    chartsContainer.appendChild(wrapper);
+
+                    const timestamps = slicedData.map((entry, i) => i);
+                    const values = slicedData.map(entry => {
+                        const val = entry['5G'] && entry['5G'][metric];
+                        if (!val) return null;
+                        const numVal = parseFloat(val);
+                        // For SINR, if value is less than 0, set to -1 (will show as -∞)
+                        if (metric === 'sinr' && numVal < 0) return -1;
+                        return numVal;
+                    }).filter(v => v !== null);
+
+                    let additionalDataset = null;
+                    if (showThroughput && performanceData.length > 0) {
+                        const perfMetric = testType === 'iperf3' ? 'throughput' : 'latency';
+                        const perfLabel = testType === 'iperf3' ? 'Throughput (Mbps)' : 'Latency (ms)';
+                        const perfColor = testType === 'iperf3' ? '#ff6b6b' : '#feca57';
+                        
+                        additionalDataset = {
+                            label: perfLabel,
+                            data: performanceData.map(p => p[perfMetric]),
+                            color: perfColor,
+                            yAxisLabel: perfLabel
+                        };
+                    }
+
+                    createChart(canvas.id, labels[idx], values, timestamps, colors[idx], labels[idx], additionalDataset, metric === 'sinr');
+                });
+            });
+
+            showStatus('Data processed successfully!', 'success');
+        }
+    </script>
+</body>
+</html>
