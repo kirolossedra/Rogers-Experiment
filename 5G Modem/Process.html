@@ -476,6 +476,32 @@
 
                     createChart(canvas.id, labels[idx], values, timestamps, colors[idx], labels[idx], additionalDataset, metric === 'sinr');
                 });
+
+                // Add separate throughput/latency plot if not showing on same plot
+                if (!showThroughput && performanceData.length > 0) {
+                    const wrapper = document.createElement('div');
+                    wrapper.className = 'chart-wrapper';
+                    
+                    const title = document.createElement('div');
+                    title.className = 'chart-title';
+                    const perfTitle = testType === 'iperf3' ? 'Throughput' : 'Latency';
+                    title.textContent = `${perfTitle} - ${startTimeStr} (${testFile.name})`;
+                    wrapper.appendChild(title);
+
+                    const canvas = document.createElement('canvas');
+                    canvas.id = `chart_${chartIndex++}`;
+                    wrapper.appendChild(canvas);
+                    chartsContainer.appendChild(wrapper);
+
+                    const perfMetric = testType === 'iperf3' ? 'throughput' : 'latency';
+                    const perfLabel = testType === 'iperf3' ? 'Throughput (Mbps)' : 'Latency (ms)';
+                    const perfColor = testType === 'iperf3' ? '#ff6b6b' : '#feca57';
+                    
+                    const perfTimestamps = performanceData.map((entry, i) => i);
+                    const perfValues = performanceData.map(p => p[perfMetric]);
+
+                    createChart(canvas.id, perfLabel, perfValues, perfTimestamps, perfColor, perfLabel, null, false);
+                }
             });
 
             showStatus('Data processed successfully!', 'success');
