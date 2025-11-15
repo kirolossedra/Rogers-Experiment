@@ -139,12 +139,73 @@
             margin-bottom: 30px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
-        .chart-title {
+        .chart-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .chart-title-input {
             font-size: 1.3em;
             font-weight: 600;
             color: #333;
-            margin-bottom: 15px;
+            border: 2px solid transparent;
+            padding: 5px 10px;
+            border-radius: 5px;
+            background: white;
+            flex: 1;
+            min-width: 300px;
+        }
+        .chart-title-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .chart-controls {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        .slider-control {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: white;
+            padding: 8px 15px;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+        }
+        .slider-control label {
+            margin: 0;
+            font-size: 14px;
+            white-space: nowrap;
+        }
+        .slider-control input[type="range"] {
+            width: 150px;
+        }
+        .slider-control span {
+            font-weight: 700;
+            color: #667eea;
+            min-width: 30px;
             text-align: center;
+        }
+        .copy-btn {
+            background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 14px;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin: 0;
+        }
+        .copy-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(67, 233, 123, 0.4);
         }
         canvas {
             max-height: 400px;
@@ -194,21 +255,19 @@
     <script>
         let jsonData = null;
         let testFiles = [];
+        let chartInstances = {};
 
         document.getElementById('jsonFile').addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (file) {
                 try {
                     const text = await file.text();
-                    // Handle both array format and newline-delimited JSON
                     if (text.trim().startsWith('[')) {
                         jsonData = JSON.parse(text);
                     } else {
-                        // Parse newline-delimited JSON
                         jsonData = text.trim().split('\n')
                             .filter(line => line.trim())
                             .map(line => {
-                                // Remove trailing comma if exists
                                 const cleanLine = line.trim().replace(/,$/, '');
                                 return JSON.parse(cleanLine);
                             });
@@ -238,7 +297,6 @@
         }
 
         function parseTimestamp(ts) {
-            // Convert Unix timestamp to Toronto time
             const date = new Date(ts * 1000);
             return date.toLocaleString('en-CA', { 
                 timeZone: 'America/Toronto',
@@ -268,7 +326,6 @@
                     if (!startTime) startTime = timestamp;
                     endTime = timestamp;
 
-                    // Extract throughput (Mbits/sec)
                     const throughputMatch = line.match(/(\d+\.?\d*)\s+Mbits\/sec/);
                     if (throughputMatch) {
                         throughputData.push({
@@ -298,7 +355,6 @@
                     if (!startTime) startTime = timestamp;
                     endTime = timestamp;
 
-                    // Extract latency (time=XX ms)
                     const latencyMatch = line.match(/time=(\d+\.?\d*)\s*ms/);
                     if (latencyMatch) {
                         latencyData.push({
@@ -319,35 +375,59 @@
             });
         }
 
-        function createChart(canvasId, label, data, timestamps, color, yAxisLabel, additionalDataset = null, isSinr = false) {
+        function movingAverage(data, windowSize) {
+            if (windowSize <= 1) return data;
+            
+            const result = [];
+            for (let i = 0; i < data.length; i++) {
+                const start = Math.max(0, i - Math.floor(windowSize / 2));
+                const end = Math.min(data.length, i + Math.ceil(windowSize / 2));
+                const window = data.slice(start, end).filter(v => v !== null && v !== undefined);
+                const sum = window.reduce((a, b) => a + b, 0);
+                result.push(window.length > 0 ? sum / window.length : null);
+            }
+            return result;
+        }
+
+        function createChart(canvasId, label, rawData, timestamps, color, yAxisLabel, additionalDataset = null, isSinr = false) {
             const ctx = document.getElementById(canvasId).getContext('2d');
             
             const datasets = [{
                 label: label,
-                data: data,
+                data: rawData,
                 borderColor: color,
                 backgroundColor: color + '20',
                 tension: 0.4,
                 fill: true,
-                borderWidth: 2,
+                borderWidth: 3,
                 pointRadius: 0,
                 yAxisID: 'y'
             }];
 
             const scales = {
                 x: {
-                    title: { display: true, text: 'Time (seconds)' },
-                    grid: { color: 'rgba(0,0,0,0.05)' }
+                    title: { 
+                        display: true, 
+                        text: 'Time (seconds)',
+                        font: { weight: 'bold', size: 14 }
+                    },
+                    grid: { color: 'rgba(0,0,0,0.05)' },
+                    ticks: { font: { weight: 'bold' } }
                 },
                 y: {
-                    title: { display: true, text: yAxisLabel },
+                    title: { 
+                        display: true, 
+                        text: yAxisLabel,
+                        font: { weight: 'bold', size: 14 }
+                    },
                     grid: { color: 'rgba(0,0,0,0.1)' },
                     position: 'left',
-                    ticks: isSinr ? {
-                        callback: function(value) {
+                    ticks: { 
+                        font: { weight: 'bold' },
+                        callback: isSinr ? function(value) {
                             return value === -1 ? '-∞' : value;
-                        }
-                    } : {}
+                        } : undefined
+                    }
                 }
             };
 
@@ -359,19 +439,24 @@
                     backgroundColor: additionalDataset.color + '20',
                     tension: 0.4,
                     fill: false,
-                    borderWidth: 2,
+                    borderWidth: 3,
                     pointRadius: 0,
                     yAxisID: 'y1'
                 });
 
                 scales.y1 = {
-                    title: { display: true, text: additionalDataset.yAxisLabel },
+                    title: { 
+                        display: true, 
+                        text: additionalDataset.yAxisLabel,
+                        font: { weight: 'bold', size: 14 }
+                    },
                     grid: { drawOnChartArea: false },
-                    position: 'right'
+                    position: 'right',
+                    ticks: { font: { weight: 'bold' } }
                 };
             }
 
-            new Chart(ctx, {
+            const chart = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: timestamps,
@@ -387,12 +472,106 @@
                     plugins: {
                         legend: {
                             display: true,
-                            position: 'top'
+                            position: 'top',
+                            labels: { font: { weight: 'bold', size: 12 } }
                         }
                     },
                     scales: scales
                 }
             });
+
+            chartInstances[canvasId] = {
+                chart: chart,
+                rawData: rawData,
+                additionalRawData: additionalDataset ? additionalDataset.data : null,
+                timestamps: timestamps,
+                label: label,
+                color: color,
+                yAxisLabel: yAxisLabel,
+                additionalDataset: additionalDataset,
+                isSinr: isSinr
+            };
+
+            return chart;
+        }
+
+        function updateChart(canvasId, windowSize) {
+            const instance = chartInstances[canvasId];
+            if (!instance) return;
+
+            const smoothedData = movingAverage(instance.rawData, windowSize);
+            instance.chart.data.datasets[0].data = smoothedData;
+
+            if (instance.additionalRawData) {
+                const smoothedAdditional = movingAverage(instance.additionalRawData, windowSize);
+                instance.chart.data.datasets[1].data = smoothedAdditional;
+            }
+
+            instance.chart.update();
+        }
+
+        async function copyChartToClipboard(canvasId) {
+            const instance = chartInstances[canvasId];
+            if (!instance) return;
+
+            const chart = instance.chart;
+            const originalBg = chart.options.plugins.backgroundColor;
+            
+            // Set white background
+            chart.options.plugins.backgroundColor = '#ffffff';
+            
+            // Enable grid for both axes
+            const originalXGrid = chart.options.scales.x.grid.display;
+            const originalYGrid = chart.options.scales.y.grid.display;
+            chart.options.scales.x.grid.display = true;
+            chart.options.scales.y.grid.display = true;
+            chart.options.scales.x.grid.color = 'rgba(0,0,0,0.1)';
+            chart.options.scales.y.grid.color = 'rgba(0,0,0,0.1)';
+            
+            if (chart.options.scales.y1) {
+                const originalY1Grid = chart.options.scales.y1.grid.display;
+                chart.options.scales.y1.grid.display = true;
+                chart.options.scales.y1.grid.color = 'rgba(0,0,0,0.1)';
+            }
+
+            chart.update();
+
+            // Add white background plugin
+            const bgPlugin = {
+                id: 'customCanvasBackgroundColor',
+                beforeDraw: (chart) => {
+                    const ctx = chart.canvas.getContext('2d');
+                    ctx.save();
+                    ctx.globalCompositeOperation = 'destination-over';
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, chart.width, chart.height);
+                    ctx.restore();
+                }
+            };
+
+            Chart.register(bgPlugin);
+            chart.update();
+
+            try {
+                const canvas = chart.canvas;
+                const blob = await new Promise(resolve => canvas.toBlob(resolve));
+                await navigator.clipboard.write([
+                    new ClipboardItem({ 'image/png': blob })
+                ]);
+                showStatus('Chart copied to clipboard!', 'success');
+            } catch (err) {
+                showStatus('Failed to copy chart: ' + err.message, 'error');
+            }
+
+            // Restore original settings
+            Chart.unregister(bgPlugin);
+            chart.options.plugins.backgroundColor = originalBg;
+            chart.options.scales.x.grid.display = originalXGrid;
+            chart.options.scales.y.grid.display = originalYGrid;
+            if (chart.options.scales.y1) {
+                chart.options.scales.y1.grid.display = false;
+            }
+            chart.update();
         }
 
         function processData() {
@@ -405,6 +584,7 @@
             const showThroughput = document.getElementById('showThroughput').checked;
             const chartsContainer = document.getElementById('chartsContainer');
             chartsContainer.innerHTML = '';
+            chartInstances = {};
 
             let chartIndex = 0;
 
@@ -440,22 +620,64 @@
                     const wrapper = document.createElement('div');
                     wrapper.className = 'chart-wrapper';
                     
-                    const title = document.createElement('div');
-                    title.className = 'chart-title';
-                    title.textContent = `${labels[idx]} - ${startTimeStr} (${testFile.name})`;
-                    wrapper.appendChild(title);
+                    const header = document.createElement('div');
+                    header.className = 'chart-header';
+                    
+                    const titleInput = document.createElement('input');
+                    titleInput.type = 'text';
+                    titleInput.className = 'chart-title-input';
+                    titleInput.value = `${labels[idx]} - ${startTimeStr} (${testFile.name})`;
+                    header.appendChild(titleInput);
+
+                    const controls = document.createElement('div');
+                    controls.className = 'chart-controls';
+
+                    const sliderControl = document.createElement('div');
+                    sliderControl.className = 'slider-control';
+                    
+                    const sliderLabel = document.createElement('label');
+                    sliderLabel.textContent = 'Smoothing:';
+                    sliderControl.appendChild(sliderLabel);
+
+                    const slider = document.createElement('input');
+                    slider.type = 'range';
+                    slider.min = '1';
+                    slider.max = '50';
+                    slider.value = '1';
+                    const canvasId = `chart_${chartIndex}`;
+                    slider.addEventListener('input', (e) => {
+                        updateChart(canvasId, parseInt(e.target.value));
+                        valueSpan.textContent = e.target.value;
+                    });
+                    sliderControl.appendChild(slider);
+
+                    const valueSpan = document.createElement('span');
+                    valueSpan.textContent = '1';
+                    sliderControl.appendChild(valueSpan);
+
+                    controls.appendChild(sliderControl);
+
+                    const copyBtn = document.createElement('button');
+                    copyBtn.className = 'copy-btn';
+                    copyBtn.textContent = '📋 Copy';
+                    copyBtn.onclick = () => copyChartToClipboard(canvasId);
+                    controls.appendChild(copyBtn);
+
+                    header.appendChild(controls);
+                    wrapper.appendChild(header);
 
                     const canvas = document.createElement('canvas');
-                    canvas.id = `chart_${chartIndex++}`;
+                    canvas.id = canvasId;
                     wrapper.appendChild(canvas);
                     chartsContainer.appendChild(wrapper);
+
+                    chartIndex++;
 
                     const timestamps = slicedData.map((entry, i) => i);
                     const values = slicedData.map(entry => {
                         const val = entry['5G'] && entry['5G'][metric];
                         if (!val) return null;
                         const numVal = parseFloat(val);
-                        // For SINR, if value is less than 0, set to -1 (will show as -∞)
                         if (metric === 'sinr' && numVal < 0) return -1;
                         return numVal;
                     }).filter(v => v !== null);
@@ -477,21 +699,63 @@
                     createChart(canvas.id, labels[idx], values, timestamps, colors[idx], labels[idx], additionalDataset, metric === 'sinr');
                 });
 
-                // Add separate throughput/latency plot if not showing on same plot
                 if (!showThroughput && performanceData.length > 0) {
                     const wrapper = document.createElement('div');
                     wrapper.className = 'chart-wrapper';
                     
-                    const title = document.createElement('div');
-                    title.className = 'chart-title';
+                    const header = document.createElement('div');
+                    header.className = 'chart-header';
+                    
                     const perfTitle = testType === 'iperf3' ? 'Throughput' : 'Latency';
-                    title.textContent = `${perfTitle} - ${startTimeStr} (${testFile.name})`;
-                    wrapper.appendChild(title);
+                    const titleInput = document.createElement('input');
+                    titleInput.type = 'text';
+                    titleInput.className = 'chart-title-input';
+                    titleInput.value = `${perfTitle} - ${startTimeStr} (${testFile.name})`;
+                    header.appendChild(titleInput);
+
+                    const controls = document.createElement('div');
+                    controls.className = 'chart-controls';
+
+                    const sliderControl = document.createElement('div');
+                    sliderControl.className = 'slider-control';
+                    
+                    const sliderLabel = document.createElement('label');
+                    sliderLabel.textContent = 'Smoothing:';
+                    sliderControl.appendChild(sliderLabel);
+
+                    const slider = document.createElement('input');
+                    slider.type = 'range';
+                    slider.min = '1';
+                    slider.max = '50';
+                    slider.value = '1';
+                    const canvasId = `chart_${chartIndex}`;
+                    slider.addEventListener('input', (e) => {
+                        updateChart(canvasId, parseInt(e.target.value));
+                        valueSpan.textContent = e.target.value;
+                    });
+                    sliderControl.appendChild(slider);
+
+                    const valueSpan = document.createElement('span');
+                    valueSpan.textContent = '1';
+                    sliderControl.appendChild(valueSpan);
+
+                    controls.appendChild(sliderControl);
+
+                    const copyBtn = document.createElement('button');
+                    copyBtn.className = 'copy-btn';
+                    copyBtn.textContent = '📋 Copy';
+                    copyBtn.onclick = () => copyChartToClipboard(canvasId);
+                    controls.appendChild(copyBtn);
+
+                    header.appendChild(controls);
+                    wrapper.appendChild(header);
 
                     const canvas = document.createElement('canvas');
-                    canvas.id = `chart_${chartIndex++}`;
+                    canvas.id = canvasId;
                     wrapper.appendChild(canvas);
                     chartsContainer.appendChild(wrapper);
+
+                    chartIndex++;
 
                     const perfMetric = testType === 'iperf3' ? 'throughput' : 'latency';
                     const perfLabel = testType === 'iperf3' ? 'Throughput (Mbps)' : 'Latency (ms)';
