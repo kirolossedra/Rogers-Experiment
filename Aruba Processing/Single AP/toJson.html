@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WiFi Log Parser</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+        
+        .content {
+            padding: 30px;
+        }
+        
+        .input-group {
+            margin-bottom: 25px;
+        }
+        
+        .input-group label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #333;
+        }
+        
+        .input-group input[type="text"],
+        .input-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .input-group input[type="text"]:focus,
+        .input-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .input-group textarea {
+            resize: vertical;
+            min-height: 200px;
+        }
+        
+        .file-input-wrapper {
+            position: relative;
+            display: inline-block;
+            width: 100%;
+        }
+        
+        .file-input-wrapper input[type="file"] {
+            position: absolute;
+            opacity: 0;
+            width: 100%;
+            height: 100%;
+            cursor: pointer;
+        }
+        
+        .file-input-button {
+            display: block;
+            padding: 12px 20px;
+            background: #f5f5f5;
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .file-input-button:hover {
+            background: #e8e8e8;
+            border-color: #667eea;
+        }
+        
+        .file-input-button.has-file {
+            background: #e8f5e9;
+            border-color: #4caf50;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 15px;
+            margin-top: 25px;
+        }
+        
+        button {
+            flex: 1;
+            padding: 14px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-primary:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .btn-secondary {
+            background: #4caf50;
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background: #45a049;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(76, 175, 80, 0.4);
+        }
+        
+        .btn-secondary:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .results {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f9f9f9;
+            border-radius: 8px;
+            display: none;
+        }
+        
+        .results.show {
+            display: block;
+        }
+        
+        .results h3 {
+            color: #333;
+            margin-bottom: 15px;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .stat-card .label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        
+        .stat-card .value {
+            font-size: 24px;
+            font-weight: 700;
+            color: #667eea;
+        }
+        
+        .json-preview {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 15px;
+            border-radius: 8px;
+            max-height: 300px;
+            overflow: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 15px;
+            display: none;
+        }
+        
+        .error.show {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📡 WiFi Log Parser</h1>
+            <p>Extract and analyze client data from WiFi access point logs</p>
+        </div>
+        
+        <div class="content">
+            <div class="input-group">
+                <label for="macAddress">MAC Address to Extract:</label>
+                <input type="text" id="macAddress" placeholder="e.g., 4c:49:6c:d4:db:a9" value="4c:49:6c:d4:db:a9">
+            </div>
+            
+            <div class="input-group">
+                <label>Upload Log File:</label>
+                <div class="file-input-wrapper">
+                    <input type="file" id="fileInput" accept=".txt,.log">
+                    <div class="file-input-button" id="fileButton">
+                        📁 Click to select log file or drag & drop
+                    </div>
+                </div>
+            </div>
+            
+            <div class="input-group">
+                <label for="logText">Or Paste Log Content:</label>
+                <textarea id="logText" placeholder="Paste your log file content here..."></textarea>
+            </div>
+            
+            <div class="button-group">
+                <button class="btn-primary" id="parseBtn">Parse Log</button>
+                <button class="btn-secondary" id="downloadBtn" disabled>Download JSON</button>
+            </div>
+            
+            <div class="error" id="error"></div>
+            
+            <div class="results" id="results">
+                <h3>Results</h3>
+                <div class="stats">
+                    <div class="stat-card">
+                        <div class="label">Records Found</div>
+                        <div class="value" id="recordCount">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">Avg Last ACK SNR</div>
+                        <div class="value" id="avgAckSnr">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">Avg Last RX SNR</div>
+                        <div class="value" id="avgRxSnr">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">Avg Signal</div>
+                        <div class="value" id="avgSignal">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">Noise Floor</div>
+                        <div class="value" id="noiseFloor">0</div>
+                    </div>
+                </div>
+                <div class="json-preview" id="jsonPreview"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let parsedData = null;
+        
+        const fileInput = document.getElementById('fileInput');
+        const fileButton = document.getElementById('fileButton');
+        const logText = document.getElementById('logText');
+        const macAddress = document.getElementById('macAddress');
+        const parseBtn = document.getElementById('parseBtn');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const results = document.getElementById('results');
+        const error = document.getElementById('error');
+        
+        // File input handling
+        fileInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                fileButton.textContent = `📄 ${file.name}`;
+                fileButton.classList.add('has-file');
+                
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    logText.value = e.target.result;
+                };
+                reader.readAsText(file);
+            }
+        });
+        
+        // Parse button
+        parseBtn.addEventListener('click', function() {
+            const logContent = logText.value.trim();
+            const mac = macAddress.value.trim().toLowerCase();
+            
+            error.classList.remove('show');
+            results.classList.remove('show');
+            
+            if (!logContent) {
+                showError('Please provide log content');
+                return;
+            }
+            
+            if (!mac) {
+                showError('Please provide a MAC address');
+                return;
+            }
+            
+            try {
+                parsedData = parseLog(logContent, mac);
+                displayResults(parsedData);
+                downloadBtn.disabled = false;
+            } catch (e) {
+                showError('Error parsing log: ' + e.message);
+            }
+        });
+        
+        // Download button
+        downloadBtn.addEventListener('click', function() {
+            if (!parsedData) return;
+            
+            const json = JSON.stringify(parsedData, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `wifi_log_${macAddress.value.replace(/:/g, '')}_${Date.now()}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        });
+        
+        function parseLog(logContent, targetMac) {
+            const lines = logContent.split('\n');
+            const records = [];
+            let currentTimestamp = null;
+            let currentNoiseFloor = null;
+            let currentSignal = null;
+            
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                
+                // Extract timestamp
+                if (line.includes('LocalBeginTime:')) {
+                    const match = line.match(/LocalBeginTime:\s*(\d+)\s*\(([^)]+)\)/);
+                    if (match) {
+                        currentTimestamp = match[2];
+                    }
+                }
+                
+                // Extract noise floor
+                if (line.includes('Current Noise Floor')) {
+                    const match = line.match(/Current Noise Floor\s+(\d+)/);
+                    if (match) {
+                        currentNoiseFloor = parseInt(match[1]);
+                    }
+                }
+                
+                // Extract signal from "show clients" output
+                if (line.toLowerCase().includes(targetMac) && line.includes('ROGERS')) {
+                    const parts = line.split(/\s+/);
+                    // Find signal value - it's in format like "39(good)" or "23(good)"
+                    for (let j = 0; j < parts.length; j++) {
+                        const signalMatch = parts[j].match(/^(\d+)\(good\)|^(\d+)\(poor\)|^(\d+)\(fair\)/);
+                        if (signalMatch) {
+                            currentSignal = parseInt(signalMatch[1] || signalMatch[2] || signalMatch[3]);
+                            break;
+                        }
+                    }
+                }
+                
+                // Extract client data from client-table
+                if (line.toLowerCase().includes(targetMac) && line.includes('Associated')) {
+                    const parts = line.split(/\s+/);
+                    
+                    // Find the MAC address position and extract SNR values
+                    let macIndex = -1;
+                    for (let j = 0; j < parts.length; j++) {
+                        if (parts[j].toLowerCase() === targetMac) {
+                            macIndex = j;
+                            break;
+                        }
+                    }
+                    
+                    if (macIndex >= 0 && parts.length > macIndex + 16) {
+                        const lastAckSnr = parseInt(parts[macIndex + 15]);
+                        const lastRxSnr = parseInt(parts[macIndex + 16]);
+                        
+                        if (!isNaN(lastAckSnr) && !isNaN(lastRxSnr) && currentTimestamp) {
+                            records.push({
+                                timestamp: currentTimestamp,
+                                mac_address: targetMac,
+                                last_ack_snr: lastAckSnr,
+                                last_rx_snr: lastRxSnr,
+                                noise_floor: currentNoiseFloor,
+                                signal: currentSignal
+                            });
+                        }
+                    }
+                }
+            }
+            
+            return records;
+        }
+        
+        function displayResults(data) {
+            if (data.length === 0) {
+                showError('No records found for the specified MAC address');
+                return;
+            }
+            
+            // Calculate statistics
+            const avgAckSnr = (data.reduce((sum, r) => sum + r.last_ack_snr, 0) / data.length).toFixed(1);
+            const avgRxSnr = (data.reduce((sum, r) => sum + r.last_rx_snr, 0) / data.length).toFixed(1);
+            const signalValues = data.filter(r => r.signal !== null).map(r => r.signal);
+            const avgSignal = signalValues.length > 0 
+                ? (signalValues.reduce((sum, s) => sum + s, 0) / signalValues.length).toFixed(1)
+                : 'N/A';
+            const noiseFloor = data[0].noise_floor || 'N/A';
+            
+            document.getElementById('recordCount').textContent = data.length;
+            document.getElementById('avgAckSnr').textContent = avgAckSnr;
+            document.getElementById('avgRxSnr').textContent = avgRxSnr;
+            document.getElementById('avgSignal').textContent = avgSignal;
+            document.getElementById('noiseFloor').textContent = noiseFloor;
+            
+            // Show preview (first 5 records)
+            const preview = data.slice(0, 5);
+            document.getElementById('jsonPreview').textContent = 
+                JSON.stringify(preview, null, 2) + 
+                (data.length > 5 ? `\n\n... and ${data.length - 5} more records` : '');
+            
+            results.classList.add('show');
+        }
+        
+        function showError(message) {
+            error.textContent = message;
+            error.classList.add('show');
+        }
+    </script>
+</body>
+</html>
