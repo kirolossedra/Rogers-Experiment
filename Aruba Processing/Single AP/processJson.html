@@ -105,11 +105,22 @@
         }
 
         async function copyChart(id) {
-            let c = charts[id];
-            c.options.plugins.backgroundColor = '#fff';
+            let inst = charts[id];
+            if (!inst) return;
+            let c = inst.chart;
+            
+            let origXGrid = c.options.scales.x.grid.display;
+            let origYGrid = c.options.scales.y.grid.display;
+            let origY1Grid = c.options.scales.y1 ? c.options.scales.y1.grid.display : null;
+            
             c.options.scales.x.grid.display = true;
             c.options.scales.y.grid.display = true;
-            if (c.options.scales.y1) c.options.scales.y1.grid.display = true;
+            c.options.scales.x.grid.color = 'rgba(0,0,0,0.1)';
+            c.options.scales.y.grid.color = 'rgba(0,0,0,0.1)';
+            if (c.options.scales.y1) {
+                c.options.scales.y1.grid.display = true;
+                c.options.scales.y1.grid.color = 'rgba(0,0,0,0.1)';
+            }
             c.update();
             
             let bg = {
@@ -118,7 +129,7 @@
                     let ctx = ch.canvas.getContext('2d');
                     ctx.save();
                     ctx.globalCompositeOperation = 'destination-over';
-                    ctx.fillStyle = '#fff';
+                    ctx.fillStyle = '#ffffff';
                     ctx.fillRect(0, 0, ch.width, ch.height);
                     ctx.restore();
                 }
@@ -126,14 +137,18 @@
             Chart.register(bg);
             c.update();
             
-            let blob = await new Promise(r => c.canvas.toBlob(r));
-            await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]);
-            showStatus('Chart copied!', 'success');
+            try {
+                let blob = await new Promise(r => c.canvas.toBlob(r));
+                await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]);
+                showStatus('Chart copied!', 'success');
+            } catch (err) {
+                showStatus('Copy failed: ' + err.message, 'error');
+            }
             
             Chart.unregister(bg);
-            c.options.scales.x.grid.display = false;
-            c.options.scales.y.grid.display = true;
-            if (c.options.scales.y1) c.options.scales.y1.grid.display = false;
+            c.options.scales.x.grid.display = origXGrid;
+            c.options.scales.y.grid.display = origYGrid;
+            if (c.options.scales.y1) c.options.scales.y1.grid.display = origY1Grid;
             c.update();
         }
 
