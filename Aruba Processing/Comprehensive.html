@@ -416,7 +416,7 @@
             } else showMsg('No data in time slices', 'error');
         }
 
-        function display() {
+       function display() {
             els.plots.innerHTML = '';
             charts.forEach(c => c.destroy());
             charts = [];
@@ -433,4 +433,64 @@
                 if (p.mode === 'ping') scales.y1 = { type: 'linear', position: 'right', title: { display: true, text: 'Latency (ms)', font: { weight: 'bold' } }, grid: { drawOnChartArea: false } };
                 if (p.mode === 'snr') {
                     scales.y.title.text = 'Presence';
-                    scales.y1 = { type: 'linear', position: 'right', min: 0, title: { display: true
+                    scales.y1 = { type: 'linear', position: 'right', min: 0, title: { display: true, text: 'SNR (dB)', font: { weight: 'bold' } }, grid: { drawOnChartArea: false } };
+                }
+                if (p.mode === 'all') {
+                    scales.y1 = { type: 'linear', position: 'right', title: { display: true, text: 'Throughput (Mbps)', font: { weight: 'bold' } }, grid: { drawOnChartArea: false } };
+                    scales.y2 = { type: 'linear', position: 'right', title: { display: true, text: 'Latency (ms)', font: { weight: 'bold' } }, grid: { drawOnChartArea: false } };
+                    scales.y3 = { type: 'linear', position: 'right', title: { display: true, text: 'SNR (dB)', font: { weight: 'bold' } }, grid: { drawOnChartArea: false } };
+                }
+                scales.x = p.mode === 'snr' ? { type: 'category', title: { display: true, text: 'Time', font: { weight: 'bold' } } } : { type: 'linear', title: { display: true, text: 'Seconds (elapsed)', font: { weight: 'bold' } }, ticks: { stepSize: 10 } };
+
+                charts.push(new Chart(document.getElementById(`c${i}`).getContext('2d'), {
+                    type: 'line',
+                    data: { datasets: p.datasets },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: { mode: 'index', intersect: false },
+                        plugins: {
+                            title: { display: true, text: p.mode === 'snr' ? `MAC Presence & SNR` : p.mode === 'all' ? 'All Data' : `IP Presence & ${p.mode === 'iperf' ? 'Throughput' : 'Latency'}`, font: { size: 14, weight: 'bold' } },
+                            legend: { position: 'top' },
+                            tooltip: {
+                                callbacks: {
+                                    title: ctx => "Timestamp: " + (ctx[0].raw.originalTime || ctx[0].label),
+                                    afterLabel: ctx => {
+                                        const d = ctx.raw;
+                                        let info = [];
+                                        if (d.bssid) info.push(`BSSID: ${d.bssid}`);
+                                        if (d.lastAckSNR !== undefined) info.push(`ACK SNR: ${d.lastAckSNR}`);
+                                        if (d.lastRxSNR !== undefined) info.push(`Rx SNR: ${d.lastRxSNR}`);
+                                        return info.join('\n');
+                                    }
+                                }
+                            }
+                        },
+                        scales
+                    }
+                }));
+            });
+        }
+
+        function exportPlot(i) {
+            const url = document.getElementById(`c${i}`).toDataURL('image/png');
+            const a = document.createElement('a');
+            a.download = `plot_slice_${i + 1}.png`;
+            a.href = url;
+            a.click();
+        }
+
+        async function copyPlot(i) {
+            try {
+                const canvas = document.getElementById(`c${i}`);
+                canvas.toBlob(async blob => {
+                    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+                    showMsg('Plot copied to clipboard!', 'success');
+                });
+            } catch (err) {
+                showMsg('Failed to copy plot', 'error');
+            }
+        }
+    </script>
+</body>
+</html>
