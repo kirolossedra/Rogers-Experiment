@@ -450,7 +450,7 @@
                 maintainAspectRatio: false,
                 interaction: { mode: 'index', intersect: false },
                 plugins: {
-                    title: { display: true, text: p.mode === 'snr' ? `MAC Presence & SNR` : p.mode === 'all' ? 'All Data' : `IP Presence & ${p.mode === 'iperf' ? 'Throughput' : 'Latency'}`, font: { size: 14, weight: 'bold' } },
+                    title: { display: true, text: p.mode === 'snr' ? `MAC Presence & SNR` : p.mode === 'all' ? 'All Data' : `Roaming & ${p.mode === 'iperf' ? 'Throughput' : 'Latency'}`, font: { size: 14, weight: 'bold' } },
                     legend: { position: 'top' },
                     tooltip: {
                         callbacks: {
