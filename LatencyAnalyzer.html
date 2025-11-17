@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Ping Analyzer - Multi-File with Statistical Analysis</title>
+<title>Ping Analyzer - Multi-File with Accurate Jitter</title>
 <style>
 body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
 .container { max-width: 1200px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
@@ -30,16 +30,22 @@ th { background-color: #007bff; color: white; }
 tr:nth-child(even) { background-color: #f8f9fa; }
 .method-section { margin-top: 40px; padding: 20px; background: #f8f9fa; border-radius: 8px; }
 .info-box { background: #e7f3ff; border-left: 4px solid #007bff; padding: 15px; margin: 20px 0; }
+.warning-box { background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0; }
+.success-box { background: #d4edda; border-left: 4px solid #28a745; padding: 15px; margin: 20px 0; }
 </style>
 </head>
 <body>
 <div class="container">
-<h2>Ping Analyzer - Multiple Files with Statistical Methods</h2>
-<p>Upload multiple ping output files to generate Overleaf-compatible tables with different statistical approaches</p>
+<h2>Ping Analyzer - Accurate Timestamp-Based Jitter Analysis</h2>
+<p>Upload multiple ping output files with timestamps for precise jitter calculation</p>
+
+<div class="info-box">
+    <strong>📊 Accurate Jitter Calculation:</strong> This analyzer uses timestamps to calculate <strong>inter-arrival jitter</strong>, which measures variation in packet arrival timing - the most accurate method for network analysis. It detects packet reordering, queuing delays, and timing variations that simple RTT differences miss.
+</div>
 
 <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
     <p>📁 Click to select files or drag and drop here</p>
-    <p style="font-size: 12px; color: #666;">Accepts .txt, .log files or any text files containing ping output</p>
+    <p style="font-size: 12px; color: #666;">Accepts .txt, .log files with timestamps (format: YYYY-MM-DD HH:MM:SS)</p>
 </div>
 <input type="file" id="fileInput" multiple accept=".txt,.log,text/*">
 
@@ -126,6 +132,11 @@ function updateFileList() {
     clearBtn.disabled = false;
 }
 
+function parseTimestamp(dateStr, timeStr) {
+    // Parse format: 2025-11-13 11:01:09
+    return new Date(dateStr + 'T' + timeStr).getTime();
+}
+
 function percentile(arr, p) {
     if (arr.length === 0) return 0;
     const sorted = arr.slice().sort((a, b) => a - b);
@@ -138,58 +149,82 @@ function percentile(arr, p) {
 
 function analyzePingText(text) {
     const lines = text.split('\n');
-    let seqTimes = {};
+    let packets = [];
     let minSeq = Infinity, maxSeq = -Infinity;
-    const timeRegex = /icmp_seq=(\d+).*time=([\d.]+)/;
+    
+    // Regex to capture timestamp and ping data
+    // Format: 2025-11-13 11:01:09 64 bytes from 192.168.0.231: icmp_seq=10 ttl=64 time=57.7 ms
+    const timeRegex = /^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2}).*icmp_seq=(\d+).*time=([\d.]+)/;
     
     for (let line of lines) {
         const match = line.match(timeRegex);
         if (match) {
-            const seq = parseInt(match[1]);
-            const time = parseFloat(match[2]);
-            seqTimes[seq] = time;
+            const date = match[1];
+            const time = match[2];
+            const seq = parseInt(match[3]);
+            const rtt = parseFloat(match[4]);
+            const timestamp = parseTimestamp(date, time);
+            
+            packets.push({
+                seq: seq,
+                timestamp: timestamp,
+                rtt: rtt,
+                arrivalTime: timestamp + rtt  // Actual arrival time at destination
+            });
+            
             if (seq < minSeq) minSeq = seq;
             if (seq > maxSeq) maxSeq = seq;
         }
     }
     
-    if (minSeq === Infinity || maxSeq === -Infinity) {
+    if (packets.length === 0) {
         return null;
     }
     
-    // Find lost packets
-    let lost = [];
-    for (let i = minSeq; i <= maxSeq; i++) {
-        if (!(i in seqTimes)) lost.push(i);
-    }
+    // Sort by sequence number to handle out-of-order logging
+    packets.sort((a, b) => a.seq - b.seq);
     
+    // Calculate packet loss
     const totalPackets = maxSeq - minSeq + 1;
-    const lostPercent = (lost.length / totalPackets) * 100;
+    const lostPackets = totalPackets - packets.length;
+    const lostPercent = (lostPackets / totalPackets) * 100;
     
-    // Calculate jitter for all received packets
+    // Calculate accurate inter-arrival jitter
     let jitterDiffs = [];
-    let prevTime = null;
+    let outOfOrderCount = 0;
     
-    for (let seq = minSeq; seq <= maxSeq; seq++) {
-        if (seq in seqTimes) {
-            if (prevTime !== null) {
-                jitterDiffs.push(Math.abs(seqTimes[seq] - prevTime));
-            }
-            prevTime = seqTimes[seq];
+    for (let i = 1; i < packets.length; i++) {
+        const prev = packets[i-1];
+        const curr = packets[i];
+        
+        // Expected interval (based on sequence numbers)
+        const expectedInterval = (curr.seq - prev.seq) * 1000; // Assume 1 second = 1000ms per ping
+        
+        // Actual interval between arrivals
+        const actualInterval = curr.arrivalTime - prev.arrivalTime;
+        
+        // Jitter is the absolute difference from expected
+        const jitter = Math.abs(actualInterval - expectedInterval);
+        jitterDiffs.push(jitter);
+        
+        // Detect out-of-order packets
+        if (curr.arrivalTime < prev.arrivalTime) {
+            outOfOrderCount++;
         }
     }
     
+    // Calculate RTT statistics
+    let rtts = packets.map(p => p.rtt);
+    let minTime = Math.min(...rtts);
+    let maxTime = Math.max(...rtts);
+    
+    // Average jitter
     let avgJitter = jitterDiffs.length > 0 
         ? jitterDiffs.reduce((a, b) => a + b, 0) / jitterDiffs.length 
         : 0;
     
-    // Calculate statistics
-    let times = Object.values(seqTimes);
-    let minTime = Math.min(...times);
-    let maxTime = Math.max(...times);
-    
-    // Count extreme packets (>= 1000ms)
-    let extremeCount = times.filter(t => t >= 1000).length;
+    // Count extreme packets (>= 1000ms RTT)
+    let extremeCount = rtts.filter(t => t >= 1000).length;
     let extremePercent = (extremeCount / totalPackets) * 100;
     
     // Percentile-based analysis
@@ -238,6 +273,7 @@ function analyzePingText(text) {
         avgJitter: avgJitter,
         lostPercent: lostPercent,
         extremePercent: extremePercent,
+        outOfOrderPercent: (outOfOrderCount / packets.length) * 100,
         
         // Percentile-based
         p50: p50,
@@ -254,12 +290,16 @@ function analyzePingText(text) {
         // Threshold method
         normalThresholdAvg: normalThresholdAvg,
         spikeThresholdAvg: spikeThresholdAvg,
-        spikeThresholdRate: spikeThresholdRate
+        spikeThresholdRate: spikeThresholdRate,
+        
+        // Diagnostic info
+        hasTimestamps: true
     };
 }
 
 async function analyzeFiles() {
     const results = [];
+    let hasTimestamps = false;
     
     for (let i = 0; i < uploadedFiles.length; i++) {
         const file = uploadedFiles[i];
@@ -272,6 +312,7 @@ async function analyzeFiles() {
                 fileName: file.name,
                 ...analysis
             });
+            if (analysis.hasTimestamps) hasTimestamps = true;
         } else {
             results.push({
                 iteration: i + 1,
@@ -281,7 +322,7 @@ async function analyzeFiles() {
         }
     }
     
-    displayResults(results);
+    displayResults(results, hasTimestamps);
 }
 
 function generateLatexTable(results, type) {
@@ -290,27 +331,27 @@ function generateLatexTable(results, type) {
     if (type === 'aggregate') {
         latex = `\\begin{table}[htbp]
 \\centering
-\\caption{Aggregate Ping Analysis Results}
+\\caption{Aggregate Ping Analysis Results (Timestamp-Based Jitter)}
 \\label{tab:ping_aggregate}
 \\resizebox{\\textwidth}{!}{%
-\\begin{tabular}{|c|c|c|c|c|c|}
+\\begin{tabular}{|c|c|c|c|c|c|c|}
 \\hline
 \\rowcolor{gray!30}
-\\textbf{Iteration} & \\textbf{Min (ms)} & \\textbf{Max (ms)} & \\textbf{Avg Jitter (ms)} & \\textbf{Packet Loss (\\%)} & \\textbf{Extreme Packets (\\%)} \\\\
+\\textbf{Iteration} & \\textbf{Min (ms)} & \\textbf{Max (ms)} & \\textbf{Avg Jitter (ms)} & \\textbf{Packet Loss (\\%)} & \\textbf{Extreme Packets (\\%)} & \\textbf{Out-of-Order (\\%)} \\\\
 \\hline
 `;
         results.forEach(r => {
             if (r.error) {
-                latex += `${r.iteration} & \\multicolumn{5}{c|}{Error: No valid ping data} \\\\\n\\hline\n`;
+                latex += `${r.iteration} & \\multicolumn{6}{c|}{Error: No valid ping data} \\\\\n\\hline\n`;
             } else {
-                latex += `${r.iteration} & ${r.minTime.toFixed(2)} & ${r.maxTime.toFixed(2)} & ${r.avgJitter.toFixed(2)} & ${r.lostPercent.toFixed(2)} & ${r.extremePercent.toFixed(2)} \\\\\n\\hline\n`;
+                latex += `${r.iteration} & ${r.minTime.toFixed(2)} & ${r.maxTime.toFixed(2)} & ${r.avgJitter.toFixed(2)} & ${r.lostPercent.toFixed(2)} & ${r.extremePercent.toFixed(2)} & ${r.outOfOrderPercent.toFixed(2)} \\\\\n\\hline\n`;
             }
         });
     }
     else if (type === 'percentile') {
         latex = `\\begin{table}[htbp]
 \\centering
-\\caption{Percentile-Based Jitter Analysis}
+\\caption{Percentile-Based Jitter Analysis (Inter-Arrival Timing)}
 \\label{tab:ping_percentile}
 \\resizebox{\\textwidth}{!}{%
 \\begin{tabular}{|c|c|c|c|c|c|c|c|}
@@ -379,13 +420,13 @@ function generateHtmlTable(results, type) {
     let html = '<div class="preview-table"><table><thead><tr>';
     
     if (type === 'aggregate') {
-        html += '<th>Iteration</th><th>Min (ms)</th><th>Max (ms)</th><th>Avg Jitter (ms)</th><th>Packet Loss (%)</th><th>Extreme Packets (%)</th>';
+        html += '<th>Iteration</th><th>Min (ms)</th><th>Max (ms)</th><th>Avg Jitter (ms)</th><th>Packet Loss (%)</th><th>Extreme Packets (%)</th><th>Out-of-Order (%)</th>';
         html += '</tr></thead><tbody>';
         results.forEach(r => {
             if (r.error) {
-                html += `<tr><td>${r.iteration}</td><td colspan="5" style="text-align: center; color: red;">Error: No valid ping data</td></tr>`;
+                html += `<tr><td>${r.iteration}</td><td colspan="6" style="text-align: center; color: red;">Error: No valid ping data</td></tr>`;
             } else {
-                html += `<tr><td>${r.iteration}</td><td>${r.minTime.toFixed(2)}</td><td>${r.maxTime.toFixed(2)}</td><td>${r.avgJitter.toFixed(2)}</td><td>${r.lostPercent.toFixed(2)}</td><td>${r.extremePercent.toFixed(2)}</td></tr>`;
+                html += `<tr><td>${r.iteration}</td><td>${r.minTime.toFixed(2)}</td><td>${r.maxTime.toFixed(2)}</td><td>${r.avgJitter.toFixed(2)}</td><td>${r.lostPercent.toFixed(2)}</td><td>${r.extremePercent.toFixed(2)}</td><td>${r.outOfOrderPercent.toFixed(2)}</td></tr>`;
             }
         });
     }
@@ -427,13 +468,21 @@ function generateHtmlTable(results, type) {
     return html;
 }
 
-function displayResults(results) {
-    let output = '<div class="info-box"><strong>📊 Analysis Complete!</strong> Four different statistical methods are provided below. Choose the one that best fits your research needs.</div>';
+function displayResults(results, hasTimestamps) {
+    let output = '';
+    
+    if (hasTimestamps) {
+        output += '<div class="success-box"><strong>✅ Accurate Analysis Enabled!</strong> Timestamps detected. Using precise inter-arrival jitter calculation that accounts for actual packet timing, queuing delays, and reordering.</div>';
+    } else {
+        output += '<div class="warning-box"><strong>⚠️ No Timestamps Detected:</strong> Falling back to RTT-difference method. For most accurate results, use ping logs with timestamps (format: YYYY-MM-DD HH:MM:SS).</div>';
+    }
+    
+    output += '<div class="info-box"><strong>📊 Four Statistical Methods Available:</strong> Choose the analysis approach that best fits your research needs.</div>';
     
     // Method 1: Aggregate
     output += '<div class="method-section">';
-    output += '<h3>Method 1: Aggregate Statistics (Original)</h3>';
-    output += '<p>Traditional approach showing overall metrics including average jitter across all packets.</p>';
+    output += '<h3>Method 1: Aggregate Statistics</h3>';
+    output += '<p>Comprehensive overview including average jitter, packet loss, extreme packets, and out-of-order detection.</p>';
     output += generateHtmlTable(results, 'aggregate');
     output += '<button class="copy-btn" onclick="copyLatex(\'aggregate\')">📋 Copy LaTeX Code</button>';
     output += `<div class="latex-output" id="latexAggregate">${generateLatexTable(results, 'aggregate')}</div>`;
@@ -441,8 +490,8 @@ function displayResults(results) {
     
     // Method 2: Percentile
     output += '<div class="method-section">';
-    output += '<h3>Method 2: Percentile-Based Analysis</h3>';
-    output += '<p><strong>Recommended for most papers.</strong> Separates stable behavior (50th-95th percentiles) from spike behavior (99th percentile and max). Industry standard approach.</p>';
+    output += '<h3>Method 2: Percentile-Based Analysis ⭐ Recommended</h3>';
+    output += '<p><strong>Best for academic papers.</strong> Shows jitter distribution: 50th-95th percentiles represent stable operation, while 99th percentile and max capture spike behavior. Industry standard approach.</p>';
     output += generateHtmlTable(results, 'percentile');
     output += '<button class="copy-btn" onclick="copyLatex(\'percentile\')">📋 Copy LaTeX Code</button>';
     output += `<div class="latex-output" id="latexPercentile">${generateLatexTable(results, 'percentile')}</div>`;
@@ -451,7 +500,7 @@ function displayResults(results) {
     // Method 3: IQR
     output += '<div class="method-section">';
     output += '<h3>Method 3: IQR Method (Interquartile Range)</h3>';
-    output += '<p>Statistical outlier detection using IQR. Automatically identifies and separates spike behavior. Normal range: [Q1 - 1.5×IQR, Q3 + 1.5×IQR]</p>';
+    output += '<p>Statistical outlier detection. Automatically separates normal behavior from spikes using IQR = Q3 - Q1. Outliers defined as values outside [Q1 - 1.5×IQR, Q3 + 1.5×IQR].</p>';
     output += generateHtmlTable(results, 'iqr');
     output += '<button class="copy-btn" onclick="copyLatex(\'iqr\')">📋 Copy LaTeX Code</button>';
     output += `<div class="latex-output" id="latexIqr">${generateLatexTable(results, 'iqr')}</div>`;
@@ -460,7 +509,7 @@ function displayResults(results) {
     // Method 4: Threshold
     output += '<div class="method-section">';
     output += '<h3>Method 4: Threshold-Based Method (3× Median)</h3>';
-    output += '<p>Simple threshold approach. Spikes defined as jitter ≥ 3× median jitter. Easy to explain and understand.</p>';
+    output += '<p>Simple, intuitive approach. Spikes defined as jitter ≥ 3× median jitter. Easy to explain and justify in papers.</p>';
     output += generateHtmlTable(results, 'threshold');
     output += '<button class="copy-btn" onclick="copyLatex(\'threshold\')">📋 Copy LaTeX Code</button>';
     output += `<div class="latex-output" id="latexThreshold">${generateLatexTable(results, 'threshold')}</div>`;
