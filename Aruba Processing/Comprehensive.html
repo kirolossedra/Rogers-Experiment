@@ -416,62 +416,61 @@
             } else showMsg('No data in time slices', 'error');
         }
 
-       function display() {
-            els.plots.innerHTML = '';
-            charts.forEach(c => c.destroy());
-            charts = [];
-            plots.forEach((p, i) => {
-                const div = document.createElement('div');
-                div.className = 'plot-item';
-                div.innerHTML = `<div class="plot-header"><div class="plot-title">${p.title}</div><div class="btn-group"><button class="copy-btn" onclick="copyPlot(${i})">📋 Copy</button><button class="export-btn" onclick="exportPlot(${i})">💾 Export</button></div></div><div class="plot-canvas-wrapper"><canvas id="c${i}"></canvas></div>`;
-                els.plots.appendChild(div);
+     function display() {
+    els.plots.innerHTML = '';
+    charts.forEach(c => c.destroy());
+    charts = [];
+    plots.forEach((p, i) => {
+        const div = document.createElement('div');
+        div.className = 'plot-item';
+        div.innerHTML = `<div class="plot-header"><div class="plot-title">${p.title}</div><div class="btn-group"><button class="copy-btn" onclick="copyPlot(${i})">📋 Copy</button><button class="export-btn" onclick="exportPlot(${i})">💾 Export</button></div></div><div class="plot-canvas-wrapper"><canvas id="c${i}"></canvas></div>`;
+        els.plots.appendChild(div);
 
-                const scales = {
-                    y: { type: 'linear', position: 'left', min: -0.1, max: 1.5, ticks: { stepSize: 1, callback: v => v === 0 ? 'Absent' : v === 1 ? 'Present' : '' }, title: { display: true, text: 'Connection Status', font: { weight: 'bold' } } }
-                };
-                if (p.mode === 'iperf') scales.y1 = { type: 'linear', position: 'right', title: { display: true, text: 'Throughput (Mbps)', font: { weight: 'bold' } }, grid: { drawOnChartArea: false } };
-                if (p.mode === 'ping') scales.y1 = { type: 'linear', position: 'right', title: { display: true, text: 'Latency (ms)', font: { weight: 'bold' } }, grid: { drawOnChartArea: false } };
-                if (p.mode === 'snr') {
-                    scales.y.title.text = 'Presence';
-                    scales.y1 = { type: 'linear', position: 'right', min: 0, title: { display: true, text: 'SNR (dB)', font: { weight: 'bold' } }, grid: { drawOnChartArea: false } };
-                }
-                if (p.mode === 'all') {
-                    scales.y1 = { type: 'linear', position: 'right', title: { display: true, text: 'Throughput (Mbps)', font: { weight: 'bold' } }, grid: { drawOnChartArea: false } };
-                    scales.y2 = { type: 'linear', position: 'right', title: { display: true, text: 'Latency (ms)', font: { weight: 'bold' } }, grid: { drawOnChartArea: false } };
-                    scales.y3 = { type: 'linear', position: 'right', title: { display: true, text: 'SNR (dB)', font: { weight: 'bold' } }, grid: { drawOnChartArea: false } };
-                }
-                scales.x = p.mode === 'snr' ? { type: 'category', title: { display: true, text: 'Time', font: { weight: 'bold' } } } : { type: 'linear', title: { display: true, text: 'Seconds (elapsed)', font: { weight: 'bold' } }, ticks: { stepSize: 10 } };
-
-                charts.push(new Chart(document.getElementById(`c${i}`).getContext('2d'), {
-                    type: 'line',
-                    data: { datasets: p.datasets },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        interaction: { mode: 'index', intersect: false },
-                        plugins: {
-                            title: { display: true, text: p.mode === 'snr' ? `MAC Presence & SNR` : p.mode === 'all' ? 'All Data' : `IP Presence & ${p.mode === 'iperf' ? 'Throughput' : 'Latency'}`, font: { size: 14, weight: 'bold' } },
-                            legend: { position: 'top' },
-                            tooltip: {
-                                callbacks: {
-                                    title: ctx => "Timestamp: " + (ctx[0].raw.originalTime || ctx[0].label),
-                                    afterLabel: ctx => {
-                                        const d = ctx.raw;
-                                        let info = [];
-                                        if (d.bssid) info.push(`BSSID: ${d.bssid}`);
-                                        if (d.lastAckSNR !== undefined) info.push(`ACK SNR: ${d.lastAckSNR}`);
-                                        if (d.lastRxSNR !== undefined) info.push(`Rx SNR: ${d.lastRxSNR}`);
-                                        return info.join('\n');
-                                    }
-                                }
-                            }
-                        },
-                        scales
-                    }
-                }));
-            });
+        const scales = {
+            y: { type: 'linear', position: 'left', min: -0.1, max: 1.5, ticks: { stepSize: 1, callback: v => v === 0 ? 'Absent' : v === 1 ? 'Present' : '', font: { weight: 'bold' } }, title: { display: true, text: 'Connection Status', font: { weight: 'bold' } } }
+        };
+        if (p.mode === 'iperf') scales.y1 = { type: 'linear', position: 'right', title: { display: true, text: 'Throughput (Mbps)', font: { weight: 'bold' } }, ticks: { font: { weight: 'bold' } }, grid: { drawOnChartArea: false } };
+        if (p.mode === 'ping') scales.y1 = { type: 'linear', position: 'right', title: { display: true, text: 'Latency (ms)', font: { weight: 'bold' } }, ticks: { font: { weight: 'bold' } }, grid: { drawOnChartArea: false } };
+        if (p.mode === 'snr') {
+            scales.y.title.text = 'Presence';
+            scales.y1 = { type: 'linear', position: 'right', min: 0, title: { display: true, text: 'SNR (dB)', font: { weight: 'bold' } }, ticks: { font: { weight: 'bold' } }, grid: { drawOnChartArea: false } };
         }
+        if (p.mode === 'all') {
+            scales.y1 = { type: 'linear', position: 'right', title: { display: true, text: 'Throughput (Mbps)', font: { weight: 'bold' } }, ticks: { font: { weight: 'bold' } }, grid: { drawOnChartArea: false } };
+            scales.y2 = { type: 'linear', position: 'right', title: { display: true, text: 'Latency (ms)', font: { weight: 'bold' } }, ticks: { font: { weight: 'bold' } }, grid: { drawOnChartArea: false } };
+            scales.y3 = { type: 'linear', position: 'right', title: { display: true, text: 'SNR (dB)', font: { weight: 'bold' } }, ticks: { font: { weight: 'bold' } }, grid: { drawOnChartArea: false } };
+        }
+        scales.x = p.mode === 'snr' ? { type: 'category', title: { display: true, text: 'Time', font: { weight: 'bold' } }, ticks: { font: { weight: 'bold' } } } : { type: 'linear', title: { display: true, text: 'Seconds (elapsed)', font: { weight: 'bold' } }, ticks: { stepSize: 10, font: { weight: 'bold' } } };
 
+        charts.push(new Chart(document.getElementById(`c${i}`).getContext('2d'), {
+            type: 'line',
+            data: { datasets: p.datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    title: { display: true, text: p.mode === 'snr' ? `MAC Presence & SNR` : p.mode === 'all' ? 'All Data' : `IP Presence & ${p.mode === 'iperf' ? 'Throughput' : 'Latency'}`, font: { size: 14, weight: 'bold' } },
+                    legend: { position: 'top' },
+                    tooltip: {
+                        callbacks: {
+                            title: ctx => "Timestamp: " + (ctx[0].raw.originalTime || ctx[0].label),
+                            afterLabel: ctx => {
+                                const d = ctx.raw;
+                                let info = [];
+                                if (d.bssid) info.push(`BSSID: ${d.bssid}`);
+                                if (d.lastAckSNR !== undefined) info.push(`ACK SNR: ${d.lastAckSNR}`);
+                                if (d.lastRxSNR !== undefined) info.push(`Rx SNR: ${d.lastRxSNR}`);
+                                return info.join('\n');
+                            }
+                        }
+                    }
+                },
+                scales
+            }
+        }));
+    });
+}
         function exportPlot(i) {
             const url = document.getElementById(`c${i}`).toDataURL('image/png');
             const a = document.createElement('a');
