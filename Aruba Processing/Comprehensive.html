@@ -353,7 +353,7 @@
                         const filt = iperfParsed[fn].filter(filter);
                         if (filt.length) {
                             ds.push({
-                                label: `Throughput (${fn})`,
+                                label: `Throughput`,
                                 data: movAvg(filt.map(d => ({ x: toSec(d.time.toTimeString().split(' ')[0]) - st, y: d.mbps, originalTime: d.timeStr })), w),
                                 borderColor: '#e63946',
                                 backgroundColor: '#e6394620',
@@ -371,7 +371,7 @@
                         const filt = pingParsed[fn].filter(filter);
                         if (filt.length) {
                             ds.push({
-                                label: `Latency (${fn})`,
+                                label: `Latency`,
                                 data: movAvg(filt.map(d => ({ x: toSec(d.time.toTimeString().split(' ')[0]) - st, y: d.latency, originalTime: d.timeStr })), w),
                                 borderColor: '#e63946',
                                 backgroundColor: '#e6394620',
