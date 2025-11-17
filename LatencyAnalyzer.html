@@ -2,11 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Ping Analyzer - Multi-File</title>
+<title>Ping Analyzer - Multi-File with Statistical Analysis</title>
 <style>
 body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
-.container { max-width: 1000px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+.container { max-width: 1200px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
 h2 { color: #333; margin-top: 0; }
+h3 { color: #555; margin-top: 30px; border-bottom: 2px solid #007bff; padding-bottom: 10px; }
 .upload-area { border: 2px dashed #007bff; border-radius: 8px; padding: 40px; text-align: center; margin: 20px 0; background: #f8f9fa; cursor: pointer; }
 .upload-area:hover { background: #e9ecef; }
 .upload-area.dragover { background: #cfe2ff; border-color: #0056b3; }
@@ -27,12 +28,14 @@ table { width: 100%; border-collapse: collapse; margin-top: 10px; }
 th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
 th { background-color: #007bff; color: white; }
 tr:nth-child(even) { background-color: #f8f9fa; }
+.method-section { margin-top: 40px; padding: 20px; background: #f8f9fa; border-radius: 8px; }
+.info-box { background: #e7f3ff; border-left: 4px solid #007bff; padding: 15px; margin: 20px 0; }
 </style>
 </head>
 <body>
 <div class="container">
-<h2>Ping Analyzer - Multiple Files to LaTeX Table</h2>
-<p>Upload multiple ping output files to generate an Overleaf-compatible table</p>
+<h2>Ping Analyzer - Multiple Files with Statistical Methods</h2>
+<p>Upload multiple ping output files to generate Overleaf-compatible tables with different statistical approaches</p>
 
 <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
     <p>📁 Click to select files or drag and drop here</p>
@@ -77,7 +80,7 @@ uploadArea.addEventListener('drop', (e) => {
 fileInput.addEventListener('change', (e) => {
     const files = Array.from(e.target.files);
     addFiles(files);
-    fileInput.value = ''; // Reset input
+    fileInput.value = '';
 });
 
 function addFiles(files) {
@@ -123,6 +126,16 @@ function updateFileList() {
     clearBtn.disabled = false;
 }
 
+function percentile(arr, p) {
+    if (arr.length === 0) return 0;
+    const sorted = arr.slice().sort((a, b) => a - b);
+    const index = (p / 100) * (sorted.length - 1);
+    const lower = Math.floor(index);
+    const upper = Math.ceil(index);
+    const weight = index % 1;
+    return sorted[lower] * (1 - weight) + sorted[upper] * weight;
+}
+
 function analyzePingText(text) {
     const lines = text.split('\n');
     let seqTimes = {};
@@ -153,7 +166,7 @@ function analyzePingText(text) {
     const totalPackets = maxSeq - minSeq + 1;
     const lostPercent = (lost.length / totalPackets) * 100;
     
-    // Calculate jitter
+    // Calculate jitter for all received packets
     let jitterDiffs = [];
     let prevTime = null;
     
@@ -166,7 +179,7 @@ function analyzePingText(text) {
         }
     }
     
-    let jitter = jitterDiffs.length > 0 
+    let avgJitter = jitterDiffs.length > 0 
         ? jitterDiffs.reduce((a, b) => a + b, 0) / jitterDiffs.length 
         : 0;
     
@@ -175,16 +188,73 @@ function analyzePingText(text) {
     let minTime = Math.min(...times);
     let maxTime = Math.max(...times);
     
-    // Count extreme packets
+    // Count extreme packets (>= 1000ms)
     let extremeCount = times.filter(t => t >= 1000).length;
     let extremePercent = (extremeCount / totalPackets) * 100;
     
+    // Percentile-based analysis
+    let p50 = percentile(jitterDiffs, 50);
+    let p75 = percentile(jitterDiffs, 75);
+    let p90 = percentile(jitterDiffs, 90);
+    let p95 = percentile(jitterDiffs, 95);
+    let p99 = percentile(jitterDiffs, 99);
+    
+    // IQR method
+    let q1 = percentile(jitterDiffs, 25);
+    let q3 = percentile(jitterDiffs, 75);
+    let iqr = q3 - q1;
+    let lowerBound = q1 - 1.5 * iqr;
+    let upperBound = q3 + 1.5 * iqr;
+    
+    let normalJitter = jitterDiffs.filter(j => j >= lowerBound && j <= upperBound);
+    let spikeJitter = jitterDiffs.filter(j => j < lowerBound || j > upperBound);
+    
+    let normalJitterAvg = normalJitter.length > 0 
+        ? normalJitter.reduce((a, b) => a + b, 0) / normalJitter.length 
+        : 0;
+    let spikeJitterAvg = spikeJitter.length > 0 
+        ? spikeJitter.reduce((a, b) => a + b, 0) / spikeJitter.length 
+        : 0;
+    let spikeRate = (spikeJitter.length / jitterDiffs.length) * 100;
+    
+    // Threshold-based method (3x median)
+    let medianJitter = percentile(jitterDiffs, 50);
+    let threshold = 3 * medianJitter;
+    let normalThreshold = jitterDiffs.filter(j => j < threshold);
+    let spikeThreshold = jitterDiffs.filter(j => j >= threshold);
+    
+    let normalThresholdAvg = normalThreshold.length > 0 
+        ? normalThreshold.reduce((a, b) => a + b, 0) / normalThreshold.length 
+        : 0;
+    let spikeThresholdAvg = spikeThreshold.length > 0 
+        ? spikeThreshold.reduce((a, b) => a + b, 0) / spikeThreshold.length 
+        : 0;
+    let spikeThresholdRate = (spikeThreshold.length / jitterDiffs.length) * 100;
+    
     return {
+        // Aggregate metrics
         minTime: minTime,
         maxTime: maxTime,
-        jitter: jitter,
+        avgJitter: avgJitter,
         lostPercent: lostPercent,
-        extremePercent: extremePercent
+        extremePercent: extremePercent,
+        
+        // Percentile-based
+        p50: p50,
+        p75: p75,
+        p90: p90,
+        p95: p95,
+        p99: p99,
+        
+        // IQR method
+        normalJitterAvg: normalJitterAvg,
+        spikeJitterAvg: spikeJitterAvg,
+        spikeRate: spikeRate,
+        
+        // Threshold method
+        normalThresholdAvg: normalThresholdAvg,
+        spikeThresholdAvg: spikeThresholdAvg,
+        spikeThresholdRate: spikeThresholdRate
     };
 }
 
@@ -214,12 +284,14 @@ async function analyzeFiles() {
     displayResults(results);
 }
 
-function displayResults(results) {
-    // Generate LaTeX table with gray header
-    let latex = `\\begin{table}[htbp]
+function generateLatexTable(results, type) {
+    let latex = '';
+    
+    if (type === 'aggregate') {
+        latex = `\\begin{table}[htbp]
 \\centering
-\\caption{Ping Analysis Results}
-\\label{tab:ping_analysis}
+\\caption{Aggregate Ping Analysis Results}
+\\label{tab:ping_aggregate}
 \\resizebox{\\textwidth}{!}{%
 \\begin{tabular}{|c|c|c|c|c|c|}
 \\hline
@@ -227,70 +299,178 @@ function displayResults(results) {
 \\textbf{Iteration} & \\textbf{Min (ms)} & \\textbf{Max (ms)} & \\textbf{Avg Jitter (ms)} & \\textbf{Packet Loss (\\%)} & \\textbf{Extreme Packets (\\%)} \\\\
 \\hline
 `;
-
-    results.forEach(r => {
-        if (r.error) {
-            latex += `${r.iteration} & \\multicolumn{5}{c|}{Error: No valid ping data} \\\\\n\\hline\n`;
-        } else {
-            latex += `${r.iteration} & ${r.minTime.toFixed(2)} & ${r.maxTime.toFixed(2)} & ${r.jitter.toFixed(2)} & ${r.lostPercent.toFixed(2)} & ${r.extremePercent.toFixed(2)} \\\\\n\\hline\n`;
-        }
-    });
+        results.forEach(r => {
+            if (r.error) {
+                latex += `${r.iteration} & \\multicolumn{5}{c|}{Error: No valid ping data} \\\\\n\\hline\n`;
+            } else {
+                latex += `${r.iteration} & ${r.minTime.toFixed(2)} & ${r.maxTime.toFixed(2)} & ${r.avgJitter.toFixed(2)} & ${r.lostPercent.toFixed(2)} & ${r.extremePercent.toFixed(2)} \\\\\n\\hline\n`;
+            }
+        });
+    }
+    else if (type === 'percentile') {
+        latex = `\\begin{table}[htbp]
+\\centering
+\\caption{Percentile-Based Jitter Analysis}
+\\label{tab:ping_percentile}
+\\resizebox{\\textwidth}{!}{%
+\\begin{tabular}{|c|c|c|c|c|c|c|c|}
+\\hline
+\\rowcolor{gray!30}
+\\textbf{Iteration} & \\textbf{50th\\%} & \\textbf{75th\\%} & \\textbf{90th\\%} & \\textbf{95th\\%} & \\textbf{99th\\%} & \\textbf{Max} & \\textbf{Packet Loss (\\%)} \\\\
+\\hline
+`;
+        results.forEach(r => {
+            if (r.error) {
+                latex += `${r.iteration} & \\multicolumn{7}{c|}{Error: No valid ping data} \\\\\n\\hline\n`;
+            } else {
+                latex += `${r.iteration} & ${r.p50.toFixed(2)} & ${r.p75.toFixed(2)} & ${r.p90.toFixed(2)} & ${r.p95.toFixed(2)} & ${r.p99.toFixed(2)} & ${r.maxTime.toFixed(2)} & ${r.lostPercent.toFixed(2)} \\\\\n\\hline\n`;
+            }
+        });
+    }
+    else if (type === 'iqr') {
+        latex = `\\begin{table}[htbp]
+\\centering
+\\caption{IQR-Based Jitter Separation (Normal vs. Spikes)}
+\\label{tab:ping_iqr}
+\\resizebox{\\textwidth}{!}{%
+\\begin{tabular}{|c|c|c|c|c|}
+\\hline
+\\rowcolor{gray!30}
+\\textbf{Iteration} & \\textbf{Normal Jitter (ms)} & \\textbf{Spike Jitter (ms)} & \\textbf{Spike Rate (\\%)} & \\textbf{Packet Loss (\\%)} \\\\
+\\hline
+`;
+        results.forEach(r => {
+            if (r.error) {
+                latex += `${r.iteration} & \\multicolumn{4}{c|}{Error: No valid ping data} \\\\\n\\hline\n`;
+            } else {
+                latex += `${r.iteration} & ${r.normalJitterAvg.toFixed(2)} & ${r.spikeJitterAvg.toFixed(2)} & ${r.spikeRate.toFixed(2)} & ${r.lostPercent.toFixed(2)} \\\\\n\\hline\n`;
+            }
+        });
+    }
+    else if (type === 'threshold') {
+        latex = `\\begin{table}[htbp]
+\\centering
+\\caption{Threshold-Based Jitter Separation (3$\\times$ Median)}
+\\label{tab:ping_threshold}
+\\resizebox{\\textwidth}{!}{%
+\\begin{tabular}{|c|c|c|c|c|}
+\\hline
+\\rowcolor{gray!30}
+\\textbf{Iteration} & \\textbf{Normal Jitter (ms)} & \\textbf{Spike Jitter (ms)} & \\textbf{Spike Rate (\\%)} & \\textbf{Packet Loss (\\%)} \\\\
+\\hline
+`;
+        results.forEach(r => {
+            if (r.error) {
+                latex += `${r.iteration} & \\multicolumn{4}{c|}{Error: No valid ping data} \\\\\n\\hline\n`;
+            } else {
+                latex += `${r.iteration} & ${r.normalThresholdAvg.toFixed(2)} & ${r.spikeThresholdAvg.toFixed(2)} & ${r.spikeThresholdRate.toFixed(2)} & ${r.lostPercent.toFixed(2)} \\\\\n\\hline\n`;
+            }
+        });
+    }
 
     latex += `\\end{tabular}%
 }
 \\end{table}`;
 
-    // Generate HTML preview table
-    let htmlTable = `
-        <div class="preview-table">
-            <h3>Preview:</h3>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Iteration</th>
-                        <th>Min (ms)</th>
-                        <th>Max (ms)</th>
-                        <th>Avg Jitter (ms)</th>
-                        <th>Packet Loss (%)</th>
-                        <th>Extreme Packets (%)</th>
-                    </tr>
-                </thead>
-                <tbody>
-    `;
-
-    results.forEach(r => {
-        if (r.error) {
-            htmlTable += `<tr><td>${r.iteration}</td><td colspan="5" style="text-align: center; color: red;">Error: No valid ping data</td></tr>`;
-        } else {
-            htmlTable += `
-                <tr>
-                    <td>${r.iteration}</td>
-                    <td>${r.minTime.toFixed(2)}</td>
-                    <td>${r.maxTime.toFixed(2)}</td>
-                    <td>${r.jitter.toFixed(2)}</td>
-                    <td>${r.lostPercent.toFixed(2)}</td>
-                    <td>${r.extremePercent.toFixed(2)}</td>
-                </tr>
-            `;
-        }
-    });
-
-    htmlTable += `
-                </tbody>
-            </table>
-        </div>
-    `;
-
-    document.getElementById('result').innerHTML = `
-        ${htmlTable}
-        <h3 style="margin-top: 30px;">LaTeX Code for Overleaf:</h3>
-        <button class="copy-btn" onclick="copyLatex()">📋 Copy LaTeX Code</button>
-        <div class="latex-output" id="latexOutput">${latex}</div>
-    `;
+    return latex;
 }
 
-function copyLatex() {
-    const latexText = document.getElementById('latexOutput').textContent;
+function generateHtmlTable(results, type) {
+    let html = '<div class="preview-table"><table><thead><tr>';
+    
+    if (type === 'aggregate') {
+        html += '<th>Iteration</th><th>Min (ms)</th><th>Max (ms)</th><th>Avg Jitter (ms)</th><th>Packet Loss (%)</th><th>Extreme Packets (%)</th>';
+        html += '</tr></thead><tbody>';
+        results.forEach(r => {
+            if (r.error) {
+                html += `<tr><td>${r.iteration}</td><td colspan="5" style="text-align: center; color: red;">Error: No valid ping data</td></tr>`;
+            } else {
+                html += `<tr><td>${r.iteration}</td><td>${r.minTime.toFixed(2)}</td><td>${r.maxTime.toFixed(2)}</td><td>${r.avgJitter.toFixed(2)}</td><td>${r.lostPercent.toFixed(2)}</td><td>${r.extremePercent.toFixed(2)}</td></tr>`;
+            }
+        });
+    }
+    else if (type === 'percentile') {
+        html += '<th>Iteration</th><th>50th%</th><th>75th%</th><th>90th%</th><th>95th%</th><th>99th%</th><th>Max</th><th>Packet Loss (%)</th>';
+        html += '</tr></thead><tbody>';
+        results.forEach(r => {
+            if (r.error) {
+                html += `<tr><td>${r.iteration}</td><td colspan="7" style="text-align: center; color: red;">Error: No valid ping data</td></tr>`;
+            } else {
+                html += `<tr><td>${r.iteration}</td><td>${r.p50.toFixed(2)}</td><td>${r.p75.toFixed(2)}</td><td>${r.p90.toFixed(2)}</td><td>${r.p95.toFixed(2)}</td><td>${r.p99.toFixed(2)}</td><td>${r.maxTime.toFixed(2)}</td><td>${r.lostPercent.toFixed(2)}</td></tr>`;
+            }
+        });
+    }
+    else if (type === 'iqr') {
+        html += '<th>Iteration</th><th>Normal Jitter (ms)</th><th>Spike Jitter (ms)</th><th>Spike Rate (%)</th><th>Packet Loss (%)</th>';
+        html += '</tr></thead><tbody>';
+        results.forEach(r => {
+            if (r.error) {
+                html += `<tr><td>${r.iteration}</td><td colspan="4" style="text-align: center; color: red;">Error: No valid ping data</td></tr>`;
+            } else {
+                html += `<tr><td>${r.iteration}</td><td>${r.normalJitterAvg.toFixed(2)}</td><td>${r.spikeJitterAvg.toFixed(2)}</td><td>${r.spikeRate.toFixed(2)}</td><td>${r.lostPercent.toFixed(2)}</td></tr>`;
+            }
+        });
+    }
+    else if (type === 'threshold') {
+        html += '<th>Iteration</th><th>Normal Jitter (ms)</th><th>Spike Jitter (ms)</th><th>Spike Rate (%)</th><th>Packet Loss (%)</th>';
+        html += '</tr></thead><tbody>';
+        results.forEach(r => {
+            if (r.error) {
+                html += `<tr><td>${r.iteration}</td><td colspan="4" style="text-align: center; color: red;">Error: No valid ping data</td></tr>`;
+            } else {
+                html += `<tr><td>${r.iteration}</td><td>${r.normalThresholdAvg.toFixed(2)}</td><td>${r.spikeThresholdAvg.toFixed(2)}</td><td>${r.spikeThresholdRate.toFixed(2)}</td><td>${r.lostPercent.toFixed(2)}</td></tr>`;
+            }
+        });
+    }
+    
+    html += '</tbody></table></div>';
+    return html;
+}
+
+function displayResults(results) {
+    let output = '<div class="info-box"><strong>📊 Analysis Complete!</strong> Four different statistical methods are provided below. Choose the one that best fits your research needs.</div>';
+    
+    // Method 1: Aggregate
+    output += '<div class="method-section">';
+    output += '<h3>Method 1: Aggregate Statistics (Original)</h3>';
+    output += '<p>Traditional approach showing overall metrics including average jitter across all packets.</p>';
+    output += generateHtmlTable(results, 'aggregate');
+    output += '<button class="copy-btn" onclick="copyLatex(\'aggregate\')">📋 Copy LaTeX Code</button>';
+    output += `<div class="latex-output" id="latexAggregate">${generateLatexTable(results, 'aggregate')}</div>`;
+    output += '</div>';
+    
+    // Method 2: Percentile
+    output += '<div class="method-section">';
+    output += '<h3>Method 2: Percentile-Based Analysis</h3>';
+    output += '<p><strong>Recommended for most papers.</strong> Separates stable behavior (50th-95th percentiles) from spike behavior (99th percentile and max). Industry standard approach.</p>';
+    output += generateHtmlTable(results, 'percentile');
+    output += '<button class="copy-btn" onclick="copyLatex(\'percentile\')">📋 Copy LaTeX Code</button>';
+    output += `<div class="latex-output" id="latexPercentile">${generateLatexTable(results, 'percentile')}</div>`;
+    output += '</div>';
+    
+    // Method 3: IQR
+    output += '<div class="method-section">';
+    output += '<h3>Method 3: IQR Method (Interquartile Range)</h3>';
+    output += '<p>Statistical outlier detection using IQR. Automatically identifies and separates spike behavior. Normal range: [Q1 - 1.5×IQR, Q3 + 1.5×IQR]</p>';
+    output += generateHtmlTable(results, 'iqr');
+    output += '<button class="copy-btn" onclick="copyLatex(\'iqr\')">📋 Copy LaTeX Code</button>';
+    output += `<div class="latex-output" id="latexIqr">${generateLatexTable(results, 'iqr')}</div>`;
+    output += '</div>';
+    
+    // Method 4: Threshold
+    output += '<div class="method-section">';
+    output += '<h3>Method 4: Threshold-Based Method (3× Median)</h3>';
+    output += '<p>Simple threshold approach. Spikes defined as jitter ≥ 3× median jitter. Easy to explain and understand.</p>';
+    output += generateHtmlTable(results, 'threshold');
+    output += '<button class="copy-btn" onclick="copyLatex(\'threshold\')">📋 Copy LaTeX Code</button>';
+    output += `<div class="latex-output" id="latexThreshold">${generateLatexTable(results, 'threshold')}</div>`;
+    output += '</div>';
+    
+    document.getElementById('result').innerHTML = output;
+}
+
+function copyLatex(type) {
+    const latexText = document.getElementById('latex' + type.charAt(0).toUpperCase() + type.slice(1)).textContent;
     navigator.clipboard.writeText(latexText).then(() => {
         const btn = event.target;
         const originalText = btn.textContent;
