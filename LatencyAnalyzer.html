@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Ping Analyzer - Multi-File</title>
+<style>
+body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
+.container { max-width: 1000px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+h2 { color: #333; margin-top: 0; }
+.upload-area { border: 2px dashed #007bff; border-radius: 8px; padding: 40px; text-align: center; margin: 20px 0; background: #f8f9fa; cursor: pointer; }
+.upload-area:hover { background: #e9ecef; }
+.upload-area.dragover { background: #cfe2ff; border-color: #0056b3; }
+input[type="file"] { display: none; }
+button { margin-top: 10px; padding: 12px 24px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; margin-right: 10px; }
+button:hover { background-color: #0056b3; }
+button:disabled { background-color: #6c757d; cursor: not-allowed; }
+.file-list { margin: 20px 0; }
+.file-item { background: #f8f9fa; padding: 10px; margin: 5px 0; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; }
+.file-item button { margin: 0; padding: 6px 12px; font-size: 12px; background-color: #dc3545; }
+.file-item button:hover { background-color: #c82333; }
+.result { margin-top: 20px; }
+.latex-output { background: #f8f9fa; padding: 20px; border-radius: 4px; border: 1px solid #ddd; margin-top: 20px; font-family: monospace; font-size: 12px; white-space: pre-wrap; word-wrap: break-word; }
+.copy-btn { background-color: #28a745; }
+.copy-btn:hover { background-color: #218838; }
+.preview-table { margin-top: 20px; overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+th { background-color: #007bff; color: white; }
+tr:nth-child(even) { background-color: #f8f9fa; }
+</style>
+</head>
+<body>
+<div class="container">
+<h2>Ping Analyzer - Multiple Files to LaTeX Table</h2>
+<p>Upload multiple ping output files to generate an Overleaf-compatible table</p>
+
+<div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
+    <p>📁 Click to select files or drag and drop here</p>
+    <p style="font-size: 12px; color: #666;">Accepts .txt, .log files or any text files containing ping output</p>
+</div>
+<input type="file" id="fileInput" multiple accept=".txt,.log,text/*">
+
+<div class="file-list" id="fileList"></div>
+
+<button onclick="analyzeFiles()" id="analyzeBtn" disabled>Analyze Files</button>
+<button onclick="clearFiles()" id="clearBtn" disabled>Clear All</button>
+
+<div class="result" id="result"></div>
+</div>
+
+<script>
+let uploadedFiles = [];
+
+const uploadArea = document.getElementById('uploadArea');
+const fileInput = document.getElementById('fileInput');
+const fileListDiv = document.getElementById('fileList');
+const analyzeBtn = document.getElementById('analyzeBtn');
+const clearBtn = document.getElementById('clearBtn');
+
+// Drag and drop handlers
+uploadArea.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    uploadArea.classList.add('dragover');
+});
+
+uploadArea.addEventListener('dragleave', () => {
+    uploadArea.classList.remove('dragover');
+});
+
+uploadArea.addEventListener('drop', (e) => {
+    e.preventDefault();
+    uploadArea.classList.remove('dragover');
+    const files = Array.from(e.dataTransfer.files);
+    addFiles(files);
+});
+
+fileInput.addEventListener('change', (e) => {
+    const files = Array.from(e.target.files);
+    addFiles(files);
+    fileInput.value = ''; // Reset input
+});
+
+function addFiles(files) {
+    files.forEach(file => {
+        if (!uploadedFiles.find(f => f.name === file.name)) {
+            uploadedFiles.push(file);
+        }
+    });
+    updateFileList();
+}
+
+function removeFile(index) {
+    uploadedFiles.splice(index, 1);
+    updateFileList();
+}
+
+function clearFiles() {
+    uploadedFiles = [];
+    updateFileList();
+    document.getElementById('result').innerHTML = '';
+}
+
+function updateFileList() {
+    if (uploadedFiles.length === 0) {
+        fileListDiv.innerHTML = '';
+        analyzeBtn.disabled = true;
+        clearBtn.disabled = true;
+        return;
+    }
+
+    fileListDiv.innerHTML = '<h3>Files (' + uploadedFiles.length + '):</h3>';
+    uploadedFiles.forEach((file, index) => {
+        const div = document.createElement('div');
+        div.className = 'file-item';
+        div.innerHTML = `
+            <span>${index + 1}. ${file.name}</span>
+            <button onclick="removeFile(${index})">Remove</button>
+        `;
+        fileListDiv.appendChild(div);
+    });
+
+    analyzeBtn.disabled = false;
+    clearBtn.disabled = false;
+}
+
+function analyzePingText(text) {
+    const lines = text.split('\n');
+    let seqTimes = {};
+    let minSeq = Infinity, maxSeq = -Infinity;
+    const timeRegex = /icmp_seq=(\d+).*time=([\d.]+)/;
+    
+    for (let line of lines) {
+        const match = line.match(timeRegex);
+        if (match) {
+            const seq = parseInt(match[1]);
+            const time = parseFloat(match[2]);
+            seqTimes[seq] = time;
+            if (seq < minSeq) minSeq = seq;
+            if (seq > maxSeq) maxSeq = seq;
+        }
+    }
+    
+    if (minSeq === Infinity || maxSeq === -Infinity) {
+        return null;
+    }
+    
+    // Find lost packets
+    let lost = [];
+    for (let i = minSeq; i <= maxSeq; i++) {
+        if (!(i in seqTimes)) lost.push(i);
+    }
+    
+    const totalPackets = maxSeq - minSeq + 1;
+    const lostPercent = (lost.length / totalPackets) * 100;
+    
+    // Calculate jitter
+    let jitterDiffs = [];
+    let prevTime = null;
+    
+    for (let seq = minSeq; seq <= maxSeq; seq++) {
+        if (seq in seqTimes) {
+            if (prevTime !== null) {
+                jitterDiffs.push(Math.abs(seqTimes[seq] - prevTime));
+            }
+            prevTime = seqTimes[seq];
+        }
+    }
+    
+    let jitter = jitterDiffs.length > 0 
+        ? jitterDiffs.reduce((a, b) => a + b, 0) / jitterDiffs.length 
+        : 0;
+    
+    // Calculate statistics
+    let times = Object.values(seqTimes);
+    let minTime = Math.min(...times);
+    let maxTime = Math.max(...times);
+    
+    // Count extreme packets
+    let extremeCount = times.filter(t => t >= 1000).length;
+    let extremePercent = (extremeCount / totalPackets) * 100;
+    
+    return {
+        minTime: minTime,
+        maxTime: maxTime,
+        jitter: jitter,
+        lostPercent: lostPercent,
+        extremePercent: extremePercent
+    };
+}
+
+async function analyzeFiles() {
+    const results = [];
+    
+    for (let i = 0; i < uploadedFiles.length; i++) {
+        const file = uploadedFiles[i];
+        const text = await file.text();
+        const analysis = analyzePingText(text);
+        
+        if (analysis) {
+            results.push({
+                iteration: i + 1,
+                fileName: file.name,
+                ...analysis
+            });
+        } else {
+            results.push({
+                iteration: i + 1,
+                fileName: file.name,
+                error: true
+            });
+        }
+    }
+    
+    displayResults(results);
+}
+
+function displayResults(results) {
+    // Generate LaTeX table with gray header
+    let latex = `\\begin{table}[htbp]
+\\centering
+\\caption{Ping Analysis Results}
+\\label{tab:ping_analysis}
+\\resizebox{\\textwidth}{!}{%
+\\begin{tabular}{|c|c|c|c|c|c|}
+\\hline
+\\rowcolor{gray!30}
+\\textbf{Iteration} & \\textbf{Min (ms)} & \\textbf{Max (ms)} & \\textbf{Avg Jitter (ms)} & \\textbf{Packet Loss (\\%)} & \\textbf{Extreme Packets (\\%)} \\\\
+\\hline
+`;
+
+    results.forEach(r => {
+        if (r.error) {
+            latex += `${r.iteration} & \\multicolumn{5}{c|}{Error: No valid ping data} \\\\\n\\hline\n`;
+        } else {
+            latex += `${r.iteration} & ${r.minTime.toFixed(2)} & ${r.maxTime.toFixed(2)} & ${r.jitter.toFixed(2)} & ${r.lostPercent.toFixed(2)} & ${r.extremePercent.toFixed(2)} \\\\\n\\hline\n`;
+        }
+    });
+
+    latex += `\\end{tabular}%
+}
+\\end{table}`;
+
+    // Generate HTML preview table
+    let htmlTable = `
+        <div class="preview-table">
+            <h3>Preview:</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Iteration</th>
+                        <th>Min (ms)</th>
+                        <th>Max (ms)</th>
+                        <th>Avg Jitter (ms)</th>
+                        <th>Packet Loss (%)</th>
+                        <th>Extreme Packets (%)</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+
+    results.forEach(r => {
+        if (r.error) {
+            htmlTable += `<tr><td>${r.iteration}</td><td colspan="5" style="text-align: center; color: red;">Error: No valid ping data</td></tr>`;
+        } else {
+            htmlTable += `
+                <tr>
+                    <td>${r.iteration}</td>
+                    <td>${r.minTime.toFixed(2)}</td>
+                    <td>${r.maxTime.toFixed(2)}</td>
+                    <td>${r.jitter.toFixed(2)}</td>
+                    <td>${r.lostPercent.toFixed(2)}</td>
+                    <td>${r.extremePercent.toFixed(2)}</td>
+                </tr>
+            `;
+        }
+    });
+
+    htmlTable += `
+                </tbody>
+            </table>
+        </div>
+    `;
+
+    document.getElementById('result').innerHTML = `
+        ${htmlTable}
+        <h3 style="margin-top: 30px;">LaTeX Code for Overleaf:</h3>
+        <button class="copy-btn" onclick="copyLatex()">📋 Copy LaTeX Code</button>
+        <div class="latex-output" id="latexOutput">${latex}</div>
+    `;
+}
+
+function copyLatex() {
+    const latexText = document.getElementById('latexOutput').textContent;
+    navigator.clipboard.writeText(latexText).then(() => {
+        const btn = event.target;
+        const originalText = btn.textContent;
+        btn.textContent = '✓ Copied!';
+        setTimeout(() => {
+            btn.textContent = originalText;
+        }, 2000);
+    });
+}
+</script>
+</body>
+</html>
