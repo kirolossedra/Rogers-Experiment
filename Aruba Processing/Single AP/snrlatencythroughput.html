@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WiFi Performance Analyzer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 20px; }
+        .container { max-width: 1400px; margin: 0 auto; background: white; border-radius: 15px; padding: 30px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+        h1 { color: #667eea; text-align: center; margin-bottom: 30px; }
+        .upload { background: #f8f9fa; padding: 25px; border-radius: 10px; margin-bottom: 30px; }
+        label { display: block; font-weight: 600; margin: 15px 0 8px; color: #333; }
+        input[type="text"], input[type="file"], textarea, select { width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px; margin-bottom: 10px; }
+        textarea { min-height: 150px; font-family: monospace; resize: vertical; }
+        .options { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin: 15px 0; }
+        button { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 15px 40px; font-size: 16px; font-weight: 600; border-radius: 8px; cursor: pointer; margin: 10px auto; display: block; }
+        button:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4); }
+        .chart-wrapper { background: #f8f9fa; padding: 20px; border-radius: 10px; margin: 20px 0; }
+        .chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px; }
+        .chart-title { font-size: 1.2em; font-weight: 600; color: #333; }
+        .controls { display: flex; gap: 15px; align-items: center; }
+        .slider { display: flex; align-items: center; gap: 10px; background: white; padding: 8px 15px; border-radius: 8px; }
+        .slider input { width: 150px; }
+        .slider span { font-weight: 700; color: #667eea; min-width: 30px; text-align: center; }
+        .copy-btn { background: #43e97b; padding: 8px 15px; font-size: 14px; margin: 0; }
+        .status { padding: 12px; border-radius: 8px; margin: 10px 0; text-align: center; display: none; }
+        .status.show { display: block; }
+        .status.error { background: #f8d7da; color: #721c24; }
+        .status.success { background: #d4edda; color: #155724; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📡 WiFi Performance Analyzer</h1>
+        
+        <div class="upload">
+            <label>MAC Address:</label>
+            <input type="text" id="mac" placeholder="e.g., 4c:49:6c:d4:db:a9" value="4c:49:6c:d4:db:a9">
+            
+            <label>Aruba WiFi Log File:</label>
+            <input type="file" id="logFile" accept=".txt,.log">
+            
+            <label>Or Paste Log:</label>
+            <textarea id="logText" placeholder="Paste Aruba log content..."></textarea>
+            
+            <label>Performance Test Files (iperf3/ping):</label>
+            <input type="file" id="testFiles" accept=".txt,.log" multiple>
+            
+            <div class="options">
+                <div>
+                    <label>Test Type:</label>
+                    <select id="testType">
+                        <option value="iperf3">iperf3 (Throughput)</option>
+                        <option value="ping">ping (Latency)</option>
+                    </select>
+                </div>
+            </div>
+            
+            <button onclick="analyze()">Analyze & Plot</button>
+            <div id="status" class="status"></div>
+        </div>
+        
+        <div id="charts"></div>
+    </div>
+
+    <script>
+        let chartInstances = [];
+
+        document.getElementById('logFile').onchange = async (e) => {
+            document.getElementById('logText').value = await e.target.files[0].text();
+        };
+
+        function status(msg, type) {
+            let s = document.getElementById('status');
+            s.textContent = msg;
+            s.className = `status show ${type}`;
+            setTimeout(() => s.style.display = 'none', 3000);
+        }
+
+        function smooth(data, w) {
+            if (w <= 1) return data;
+            return data.map((_, i) => {
+                let start = Math.max(0, i - Math.floor(w/2));
+                let end = Math.min(data.length, i + Math.ceil(w/2));
+                let win = data.slice(start, end).filter(v => v != null);
+                return win.length ? win.reduce((a,b) => a+b) / win.length : null;
+            });
+        }
+
+        async function copyChart(chart) {
+            chart.options.scales.x.grid.display = true;
+            chart.options.scales.y.grid.display = true;
+            chart.options.scales.y1.grid.display = true;
+            chart.update();
+            
+            let bg = {
+                id: 'bg',
+                beforeDraw: (c) => {
+                    let ctx = c.canvas.getContext('2d');
+                    ctx.save();
+                    ctx.globalCompositeOperation = 'destination-over';
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, c.width, c.height);
+                    ctx.restore();
+                }
+            };
+            Chart.register(bg);
+            chart.update();
+            
+            try {
+                let blob = await new Promise(r => chart.canvas.toBlob(r));
+                await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]);
+                status('Chart copied!', 'success');
+            } catch (e) {
+                status('Copy failed', 'error');
+            }
+            
+            Chart.unregister(bg);
+            chart.options.scales.x.grid.display = false;
+            chart.options.scales.y.grid.display = false;
+            chart.options.scales.y1.grid.display = false;
+            chart.update();
+        }
+
+        async function analyze() {
+            let mac = document.getElementById('mac').value.trim().toLowerCase();
+            let logText = document.getElementById('logText').value.trim();
+            let testFiles = document.getElementById('testFiles').files;
+            let testType = document.getElementById('testType').value;
+            
+            if (!mac || !logText || !testFiles.length) {
+                status('Provide MAC, log, and test files', 'error');
+                return;
+            }
+            
+            // Parse WiFi log
+            let lines = logText.split('\n');
+            let wifiData = [];
+            let ts = null, noise = null;
+            
+            for (let line of lines) {
+                let m = line.match(/LocalBeginTime:\s*\d+\s*\(([^)]+)\)/);
+                if (m) ts = m[1];
+                
+                m = line.match(/Current Noise Floor\s+(\d+)/);
+                if (m) noise = parseInt(m[1]);
+                
+                if (line.toLowerCase().includes(mac)) {
+                    let parts = line.split(/\s+/);
+                    let idx = parts.findIndex(p => p.toLowerCase() === mac);
+                    if (idx >= 0 && parts.length > idx + 16) {
+                        let ack = parseInt(parts[idx + 15]);
+                        let rx = parseInt(parts[idx + 16]);
+                        if (!isNaN(ack) && !isNaN(rx) && ts) {
+                            wifiData.push({
+                                ts: new Date(ts).getTime() / 1000,
+                                ack: ack,
+                                rx: rx,
+                                noise: noise
+                            });
+                        }
+                    }
+                }
+            }
+            
+            if (!wifiData.length) {
+                status('No WiFi data found for MAC', 'error');
+                return;
+            }
+            
+            // Process test files
+            document.getElementById('charts').innerHTML = '';
+            chartInstances = [];
+            
+            for (let file of testFiles) {
+                let text = await file.text();
+                let testLines = text.split('\n');
+                let perf = [], start = null, end = null;
+                
+                if (testType === 'iperf3') {
+                    for (let l of testLines) {
+                        let m = l.match(/^(\w{3}\s+\w{3}\s+\d+\s+\d{2}:\d{2}:\d{2}\s+\d{4})/);
+                        if (m) {
+                            let t = new Date(m[1]).getTime() / 1000;
+                            if (!start) start = t;
+                            end = t;
+                            let th = l.match(/(\d+\.?\d*)\s+Mbits\/sec/);
+                            if (th) perf.push(parseFloat(th[1]));
+                        }
+                    }
+                } else {
+                    for (let l of testLines) {
+                        let m = l.match(/^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})/);
+                        if (m) {
+                            let t = new Date(m[1]).getTime() / 1000;
+                            if (!start) start = t;
+                            end = t;
+                            let lat = l.match(/time=(\d+\.?\d*)\s*ms/);
+                            if (lat) perf.push(parseFloat(lat[1]));
+                        }
+                    }
+                }
+                
+                if (!start || !perf.length) continue;
+                
+                let filtered = wifiData.filter(d => d.ts >= start && d.ts <= end);
+                if (!filtered.length) continue;
+                
+                let labels = filtered.map((_, i) => i);
+                let ack = filtered.map(d => d.ack);
+                let rx = filtered.map(d => d.rx);
+                
+                createChart(file.name, labels, ack, rx, perf, testType);
+            }
+            
+            status('Analysis complete!', 'success');
+        }
+
+        function createChart(name, labels, ack, rx, perf, type) {
+            let wrapper = document.createElement('div');
+            wrapper.className = 'chart-wrapper';
+            
+            let header = document.createElement('div');
+            header.className = 'chart-header';
+            header.innerHTML = `<div class="chart-title">${name}</div>`;
+            
+            let controls = document.createElement('div');
+            controls.className = 'controls';
+            
+            let slider = document.createElement('div');
+            slider.className = 'slider';
+            slider.innerHTML = '<label>Smooth:</label><input type="range" min="1" max="50" value="1"><span>1</span>';
+            let range = slider.querySelector('input');
+            let span = slider.querySelector('span');
+            controls.appendChild(slider);
+            
+            let copy = document.createElement('button');
+            copy.className = 'copy-btn';
+            copy.textContent = '📋 Copy';
+            controls.appendChild(copy);
+            
+            header.appendChild(controls);
+            wrapper.appendChild(header);
+            
+            let canvas = document.createElement('canvas');
+            wrapper.appendChild(canvas);
+            document.getElementById('charts').appendChild(wrapper);
+            
+            let chart = new Chart(canvas, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {label: 'ACK SNR (dB)', data: ack, borderColor: '#667eea', backgroundColor: '#667eea20', tension: 0.4, borderWidth: 3, pointRadius: 0, yAxisID: 'y'},
+                        {label: 'RX SNR (dB)', data: rx, borderColor: '#f093fb', backgroundColor: '#f093fb20', tension: 0.4, borderWidth: 3, pointRadius: 0, yAxisID: 'y'},
+                        {label: type === 'iperf3' ? 'Throughput (Mbps)' : 'Latency (ms)', data: perf, borderColor: '#ff6b6b', backgroundColor: '#ff6b6b20', tension: 0.4, borderWidth: 3, pointRadius: 0, yAxisID: 'y1'}
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    interaction: {mode: 'index', intersect: false},
+                    scales: {
+                        x: {title: {display: true, text: 'Time (s)', font: {weight: 'bold'}}, grid: {display: false}},
+                        y: {title: {display: true, text: 'SNR (dB)', font: {weight: 'bold'}}, position: 'left', grid: {display: false}},
+                        y1: {title: {display: true, text: type === 'iperf3' ? 'Throughput (Mbps)' : 'Latency (ms)', font: {weight: 'bold'}}, position: 'right', grid: {display: false}}
+                    }
+                }
+            });
+            
+            chartInstances.push({chart: chart, rawAck: ack, rawRx: rx, rawPerf: perf});
+            let idx = chartInstances.length - 1;
+            
+            range.oninput = () => {
+                span.textContent = range.value;
+                let w = parseInt(range.value);
+                chart.data.datasets[0].data = smooth(chartInstances[idx].rawAck, w);
+                chart.data.datasets[1].data = smooth(chartInstances[idx].rawRx, w);
+                chart.data.datasets[2].data = smooth(chartInstances[idx].rawPerf, w);
+                chart.update();
+            };
+            
+            copy.onclick = () => copyChart(chart);
+        }
+    </script>
+</body>
+</html>
