@@ -35,9 +35,9 @@
 <body>
 <div class="container">
   <h1>Ping Analyzer — RTT-based Jitter (Accurate)</h1>
-  <p class="lead">Upload one or more ping log files (lines with timestamps and <code>icmp_seq=</code> and <code>time=</code>). This tool computes RTT-based jitter (|RTTₙ − RTTₙ₋₁|) only for consecutive sequence numbers — the correct approach when you only have ping RTTs.</p>
+  <p class="lead">Upload one or more ping log files with Unix timestamps. Format: <code>[timestamp.microseconds] ... icmp_seq=N ... time=XX.X ms</code>. This tool computes RTT-based jitter (|RTTₙ − RTTₙ₋₁|) only for consecutive sequence numbers.</p>
 
-  <div class="upload" id="uploadArea">📂 Click or drag & drop ping log files here (format: <code>YYYY-MM-DD HH:MM:SS ... icmp_seq=N ... time=XX.X ms</code>)</div>
+  <div class="upload" id="uploadArea">📂 Click or drag & drop ping log files here (format: <code>[1763407040.100313] ... icmp_seq=N ... time=XX.X ms</code>)</div>
   <input id="fileInput" type="file" accept=".txt,.log,text/*" multiple style="display:none"/>
 
   <div class="file-list" id="fileList"></div>
@@ -65,11 +65,6 @@ function percentile(arr, p) {
 function mean(arr){
   if(!arr || arr.length===0) return 0;
   return arr.reduce((a,b)=>a+b,0)/arr.length;
-}
-function msFromDateStr(dateStr, timeStr){
-  // dateStr: YYYY-MM-DD  timeStr: HH:MM:SS
-  // create using ISO so Date parser is consistent
-  return new Date(dateStr + 'T' + timeStr).getTime();
 }
 function safeToFixed(v, d=2){ return (isFinite(v) ? v.toFixed(d) : 'NaN'); }
 
@@ -120,8 +115,8 @@ function renderFileList(){
    ============================ */
 
 // Regex expects lines like:
-// 2025-11-13 11:01:09 64 bytes from 192.168.0.231: icmp_seq=10 ttl=64 time=57.7 ms
-const PING_LINE_RE = /^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2}).*icmp_seq=(\d+).*time=([\d.]+)\s*ms/i;
+// [1763407040.100313] 64 bytes from 192.168.0.231: icmp_seq=403 ttl=64 time=80.7 ms
+const PING_LINE_RE = /^\[?([\d]+\.[\d]+)\]?\s+.*icmp_seq=(\d+).*time=([\d.]+)\s*ms/i;
 
 function analyzePingText(text){
   const lines = text.split(/\r?\n/);
@@ -131,8 +126,10 @@ function analyzePingText(text){
   for(const line of lines){
     const m = line.match(PING_LINE_RE);
     if(!m) continue;
-    const date = m[1], time = m[2], seq = parseInt(m[3],10), rtt = parseFloat(m[4]);
-    const ts = msFromDateStr(date, time); // timestamp in ms (arrival time)
+    const unixTimestamp = parseFloat(m[1]); // Unix timestamp in seconds.microseconds
+    const seq = parseInt(m[2],10);
+    const rtt = parseFloat(m[3]);
+    const ts = unixTimestamp * 1000; // convert to milliseconds
     packets.push({seq, timestamp: ts, rtt});
     if(seq < minSeq) minSeq = seq;
     if(seq > maxSeq) maxSeq = seq;
@@ -303,18 +300,85 @@ Out-of-order & ${analysis.outOfOrderCount} (${safeToFixed(analysis.outOfOrderPer
 \\end{table}`;
 }
 
+function makeCombinedComparisonTable(validResults){
+  let html = '<div class="table-wrap"><table><thead><tr><th>File</th>';
+  html += '<th>Pkts Exp.</th><th>Pkts Rcvd</th><th>Lost (%)</th>';
+  html += '<th>Min RTT</th><th>Max RTT</th>';
+  html += '<th>Avg Jitter</th><th>Med Jitter</th><th>P90</th><th>P95</th><th>P99</th><th>Max Jitter</th>';
+  html += '<th>Spike Rate (%)</th><th>Extreme RTTs</th></tr></thead><tbody>';
+  
+  validResults.forEach(r => {
+    const a = r.analysis;
+    html += '<tr>';
+    html += `<td><strong>${r.fileName}</strong></td>`;
+    html += `<td>${a.totalExpected}</td>`;
+    html += `<td>${a.receivedCount}</td>`;
+    html += `<td>${safeToFixed(a.lostPercent,2)}</td>`;
+    html += `<td>${safeToFixed(a.minRtt,2)}</td>`;
+    html += `<td>${safeToFixed(a.maxRtt,2)}</td>`;
+    html += `<td>${safeToFixed(a.avgJitter,2)}</td>`;
+    html += `<td>${safeToFixed(a.medJitter,2)}</td>`;
+    html += `<td>${safeToFixed(a.p90,2)}</td>`;
+    html += `<td>${safeToFixed(a.p95,2)}</td>`;
+    html += `<td>${safeToFixed(a.p99,2)}</td>`;
+    html += `<td>${safeToFixed(a.maxJitter,2)}</td>`;
+    html += `<td>${safeToFixed(a.spikeRate,2)}</td>`;
+    html += `<td>${a.extremeCount}</td>`;
+    html += '</tr>';
+  });
+  
+  html += '</tbody></table></div>';
+  return html;
+}
+
+function latexCombinedTable(validResults){
+  let latex = `\\begin{table}[htbp]
+\\centering
+\\caption{Combined Ping Analysis Comparison}
+\\small
+\\begin{tabular}{|l|r|r|r|r|r|r|r|r|r|}
+\\hline
+File & Exp & Rcvd & Lost(\\%) & MinRTT & MaxRTT & AvgJ & MedJ & P99 & Spike(\\%) \\\\
+\\hline
+`;
+  
+  validResults.forEach(r => {
+    const a = r.analysis;
+    const shortName = r.fileName.length > 25 ? r.fileName.substring(0,22)+'...' : r.fileName;
+    latex += `${shortName} & ${a.totalExpected} & ${a.receivedCount} & ${safeToFixed(a.lostPercent,1)} & `;
+    latex += `${safeToFixed(a.minRtt,1)} & ${safeToFixed(a.maxRtt,1)} & ${safeToFixed(a.avgJitter,1)} & `;
+    latex += `${safeToFixed(a.medJitter,1)} & ${safeToFixed(a.p99,1)} & ${safeToFixed(a.spikeRate,1)} \\\\\n`;
+  });
+  
+  latex += `\\hline
+\\end{tabular}
+\\end{table}`;
+  return latex;
+}
+
 /* ============================
    Wire analyze button
    ============================ */
 
 analyzeBtn.addEventListener('click', async ()=>{
+  analyzeBtn.disabled = true;
   resultDiv.innerHTML = '<div class="box small">Parsing files and computing statistics…</div>';
   const results = [];
   let hasAny = false;
+  
+  // Use setTimeout to allow UI to update
+  await new Promise(resolve => setTimeout(resolve, 50));
+  
   for(let i=0;i<uploadedFiles.length;i++){
     const f = uploadedFiles[i];
+    resultDiv.innerHTML = `<div class="box small">Processing file ${i+1}/${uploadedFiles.length}: ${f.name}...</div>`;
+    
     try{
       const text = await f.text();
+      
+      // Allow UI to breathe between files
+      await new Promise(resolve => setTimeout(resolve, 10));
+      
       const analysis = analyzePingText(text);
       if(analysis){
         results.push({fileName: f.name, analysis});
@@ -323,17 +387,31 @@ analyzeBtn.addEventListener('click', async ()=>{
         results.push({fileName: f.name, error:true});
       }
     }catch(e){
+      console.error('Error processing file:', f.name, e);
       results.push({fileName: f.name, error:true});
     }
   }
+  
+  analyzeBtn.disabled = false;
 
   // Display
   let out = '';
   if(!hasAny){
-    out = `<div class="warning">No valid ping lines found. Make sure logs include timestamps and <code>icmp_seq=</code> and <code>time=</code> fields (e.g. "2025-11-13 11:01:09 ... icmp_seq=10 ... time=57.7 ms").</div>`;
+    out = `<div class="warning">No valid ping lines found. Make sure logs include Unix timestamps in brackets and <code>icmp_seq=</code> and <code>time=</code> fields (e.g. "[1763407040.100313] ... icmp_seq=403 ... time=80.7 ms").</div>`;
     resultDiv.innerHTML = out; return;
   }
 
+  // First, show combined comparison table if multiple files
+  if(results.filter(r=>!r.error).length > 1){
+    out += '<div class="box"><h2 style="margin:0 0 12px">Combined Comparison Table</h2>';
+    out += makeCombinedComparisonTable(results.filter(r=>!r.error));
+    out += '</div>';
+    
+    // LaTeX version
+    out += '<div class="latex">' + latexCombinedTable(results.filter(r=>!r.error)) + '</div>';
+  }
+
+  // Then show individual file results
   results.forEach((r, idx)=>{
     if(r.error){
       out += `<div class="box"><strong>${r.fileName}</strong> — <span style="color:#b91c1c">No valid ping entries found</span></div>`;
