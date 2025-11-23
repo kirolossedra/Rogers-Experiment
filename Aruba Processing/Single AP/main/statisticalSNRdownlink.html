@@ -203,7 +203,7 @@
                             if (lat) {
                                 let latency = parseFloat(lat[1]);
                                 // Only include latency values <= 500ms, discard packets > 500ms as lost
-                                if (latency <= 500) {
+                                if (latency <= 800) {
                                     perf.push(latency);
                                 }
                             }
