@@ -120,7 +120,7 @@ function renderFileList(){
    ============================ */
 
 const PING_LINE_RE = /^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2}).*icmp_seq=(\d+).*time=([\d.]+)\s*ms/i;
-const HIGH_LATENCY_THRESHOLD = 500; // ms
+const HIGH_LATENCY_THRESHOLD = 800; // ms
 
 function analyzePingText(text){
   const lines = text.split(/\r?\n/);
