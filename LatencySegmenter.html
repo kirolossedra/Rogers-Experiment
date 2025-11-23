@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Ping Analyzer — Time Range Analysis</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  body{font-family:Arial,Helvetica,sans-serif;background:#f5f7fb;margin:20px}
+  .container{max-width:1200px;margin:0 auto;background:#fff;padding:24px;border-radius:8px;box-shadow:0 6px 18px rgba(20,30,60,.06)}
+  h1{margin:0 0 8px;font-size:22px;color:#1f2937}
+  p.lead{color:#4b5563;margin-top:0}
+  .upload{border:2px dashed #2563eb;border-radius:8px;padding:26px;text-align:center;background:#fbfdff;cursor:pointer}
+  .upload.dragover{background:#e6f0ff;border-color:#1e40af}
+  .controls{margin-top:14px;display:flex;gap:8px;flex-wrap:wrap}
+  button{background:#2563eb;color:#fff;border:none;padding:10px 14px;border-radius:6px;cursor:pointer}
+  button.secondary{background:#6b7280}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .file-list{margin-top:16px}
+  .file-item{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-radius:6px;background:#f8fafc;margin:6px 0}
+  .result{margin-top:22px}
+  .box{padding:14px;border-radius:8px;background:#f8fafc;margin-bottom:14px}
+  .table-wrap{overflow-x:auto;margin-top:10px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:8px;border:1px solid #e6eef8;text-align:left}
+  th{background:#1e40af;color:#fff}
+  .latex{background:#0f172a;color:#e6eef8;padding:12px;border-radius:6px;white-space:pre-wrap;font-family:monospace;font-size:13px;margin-top:8px}
+  .small{font-size:13px;color:#374151}
+  .tag{display:inline-block;padding:6px 8px;background:#e6f4ff;border-radius:999px;color:#0f172a;margin-right:6px;font-weight:600}
+  .warning{background:#fff7ed;border-left:4px solid #f59e0b;padding:10px;border-radius:6px}
+  .range-control{background:#fff;padding:16px;border-radius:8px;border:1px solid #e5e7eb;margin:16px 0}
+  .range-inputs{display:flex;gap:16px;align-items:center;margin-top:12px}
+  .range-inputs input[type="number"]{width:100px;padding:8px;border:1px solid #d1d5db;border-radius:6px}
+  .slider-container{margin:16px 0;display:flex;gap:12px;align-items:center}
+  input[type="range"]{flex:1;height:6px;background:#e5e7eb;border-radius:3px;outline:none}
+  input[type="range"]::-webkit-slider-thumb{appearance:none;width:20px;height:20px;background:#2563eb;border-radius:50%;cursor:pointer}
+  input[type="range"]::-moz-range-thumb{width:20px;height:20px;background:#2563eb;border-radius:50%;cursor:pointer;border:none}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Ping Analyzer — Time Range Analysis</h1>
+  <p class="lead">Upload ping log files to analyze latency and jitter statistics within specific time ranges.</p>
+
+  <div class="upload" id="uploadArea">📂 Click or drag & drop ping log files here</div>
+  <input id="fileInput" type="file" accept=".txt,.log,text/*" multiple style="display:none"/>
+
+  <div class="file-list" id="fileList"></div>
+
+  <div class="controls">
+    <button id="analyzeBtn" disabled>Analyze Files</button>
+    <button id="clearBtn" class="secondary" disabled>Clear</button>
+  </div>
+
+  <div class="result" id="result"></div>
+</div>
+
+<script>
+/* ============================
+   Utility functions
+   ============================ */
+function mean(arr){
+  if(!arr || arr.length===0) return 0;
+  return arr.reduce((a,b)=>a+b,0)/arr.length;
+}
+function stdError(arr){
+  if(!arr || arr.length<=1) return 0;
+  const m = mean(arr);
+  const variance = arr.reduce((sum,v)=>sum+Math.pow(v-m,2),0)/(arr.length-1);
+  return Math.sqrt(variance);
+}
+function percentile(arr, p) {
+  if (!arr || arr.length === 0) return 0;
+  const s = arr.slice().sort((a,b)=>a-b);
+  const idx = (p/100)*(s.length-1);
+  const lo = Math.floor(idx), hi = Math.ceil(idx);
+  const w = idx - lo;
+  return s[lo]*(1-w) + s[hi]*w;
+}
+function msFromDateStr(dateStr, timeStr){
+  return new Date(dateStr + 'T' + timeStr).getTime();
+}
+function safeToFixed(v, d=2){ return (isFinite(v) ? v.toFixed(d) : 'NaN'); }
+
+/* ============================
+   UI / File handling
+   ============================ */
+let uploadedFiles = [];
+let currentAnalyses = [];
+const uploadArea = document.getElementById('uploadArea');
+const fileInput = document.getElementById('fileInput');
+const fileListDiv = document.getElementById('fileList');
+const analyzeBtn = document.getElementById('analyzeBtn');
+const clearBtn = document.getElementById('clearBtn');
+const resultDiv = document.getElementById('result');
+
+uploadArea.addEventListener('click', ()=>fileInput.click());
+uploadArea.addEventListener('dragover', (e)=>{ e.preventDefault(); uploadArea.classList.add('dragover'); });
+uploadArea.addEventListener('dragleave', ()=>uploadArea.classList.remove('dragover'));
+uploadArea.addEventListener('drop', (e)=>{ e.preventDefault(); uploadArea.classList.remove('dragover'); addFiles(Array.from(e.dataTransfer.files)); });
+
+fileInput.addEventListener('change', (e)=>{ addFiles(Array.from(e.target.files)); fileInput.value = ''; });
+
+function addFiles(files){
+  files.forEach(f=>{
+    if(!uploadedFiles.find(u=>u.name===f.name)) uploadedFiles.push(f);
+  });
+  renderFileList();
+}
+function removeFile(idx){ uploadedFiles.splice(idx,1); renderFileList(); }
+function clearFiles(){ uploadedFiles=[]; currentAnalyses=[]; renderFileList(); resultDiv.innerHTML=''; }
+
+function renderFileList(){
+  fileListDiv.innerHTML='';
+  if(uploadedFiles.length===0){
+    analyzeBtn.disabled=true; clearBtn.disabled=true;
+    return;
+  }
+  uploadedFiles.forEach((f,i)=>{
+    const el = document.createElement('div'); el.className='file-item';
+    el.innerHTML = `<div><strong>${i+1}.</strong> ${f.name}</div>
+      <div><button onclick="removeFile(${i})" class="secondary">Remove</button></div>`;
+    fileListDiv.appendChild(el);
+  });
+  analyzeBtn.disabled=false; clearBtn.disabled=false;
+}
+
+/* ============================
+   Parsing & Analysis
+   ============================ */
+
+const PING_LINE_RE = /^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2}).*icmp_seq=(\d+).*time=([\d.]+)\s*ms/i;
+
+function analyzePingText(text){
+  const lines = text.split(/\r?\n/);
+  const packets = [];
+
+  for(const line of lines){
+    const m = line.match(PING_LINE_RE);
+    if(!m) continue;
+    const date = m[1], time = m[2], seq = parseInt(m[3],10), rtt = parseFloat(m[4]);
+    const ts = msFromDateStr(date, time);
+    packets.push({seq, timestampMs: ts, rtt});
+  }
+
+  if(packets.length===0) return null;
+
+  packets.sort((a,b)=>a.timestampMs - b.timestampMs);
+  
+  const startMs = packets[0].timestampMs;
+  packets.forEach(p => {
+    p.timeSeconds = (p.timestampMs - startMs) / 1000;
+  });
+
+  const durationSeconds = packets[packets.length-1].timeSeconds;
+  
+  // Calculate expected packets and loss
+  let minSeq = Infinity, maxSeq = -Infinity;
+  packets.forEach(p => {
+    if(p.seq < minSeq) minSeq = p.seq;
+    if(p.seq > maxSeq) maxSeq = p.seq;
+  });
+  const totalExpected = maxSeq - minSeq + 1;
+  const totalReceived = packets.length;
+  const totalLost = totalExpected - totalReceived;
+
+  return {packets, durationSeconds, minSeq, maxSeq, totalExpected, totalReceived, totalLost};
+}
+
+/* ============================
+   Statistics computation
+   ============================ */
+
+function computeStats(packets, durationMinutes, minSeq, maxSeq){
+  if(!packets || packets.length===0) return null;
+  
+  const rtts = packets.map(p=>p.rtt);
+  const minLatency = Math.min(...rtts);
+  const maxLatency = Math.max(...rtts);
+  const avgLatency = mean(rtts);
+  const stdErr = stdError(rtts);
+  const p50 = percentile(rtts, 50);
+  const p75 = percentile(rtts, 75);
+  const p90 = percentile(rtts, 90);
+  const p95 = percentile(rtts, 95);
+  const p99 = percentile(rtts, 99);
+  
+  // Compute jitter (consecutive differences by seq)
+  const jitterDiffs = [];
+  const sorted = packets.slice().sort((a,b)=>a.seq-b.seq);
+  for(let i=1; i<sorted.length; i++){
+    if(sorted[i].seq === sorted[i-1].seq + 1){
+      jitterDiffs.push(Math.abs(sorted[i].rtt - sorted[i-1].rtt));
+    }
+  }
+  const avgJitter = jitterDiffs.length ? mean(jitterDiffs) : 0;
+  
+  // Packet loss calculation
+  const seqSet = new Set(packets.map(p=>p.seq));
+  let lostInRange = 0;
+  for(let s=minSeq; s<=maxSeq; s++){
+    if(!seqSet.has(s)) lostInRange++;
+  }
+  const packetLossPerMin = durationMinutes > 0 ? lostInRange / durationMinutes : 0;
+  
+  return {
+    count: packets.length,
+    minLatency,
+    maxLatency,
+    avgLatency,
+    stdErr,
+    p50, p75, p90, p95, p99,
+    avgJitter,
+    lostInRange,
+    packetLossPerMin
+  };
+}
+
+function filterPacketsByTimeRange(packets, startSec, endSec){
+  return packets.filter(p => p.timeSeconds >= startSec && p.timeSeconds <= endSec);
+}
+
+function getSeqRange(packets){
+  if(!packets || packets.length === 0) return {min: 0, max: 0};
+  let min = Infinity, max = -Infinity;
+  packets.forEach(p => {
+    if(p.seq < min) min = p.seq;
+    if(p.seq > max) max = p.seq;
+  });
+  return {min, max};
+}
+
+/* ============================
+   Display functions
+   ============================ */
+
+function createRangeControls(maxDuration){
+  return `
+    <div class="range-control">
+      <h3 style="margin:0 0 12px">Time Range Selection (applies to all files)</h3>
+      <div class="small">Max duration: ${safeToFixed(maxDuration,1)} seconds</div>
+      
+      <div class="range-inputs">
+        <div>
+          <label class="small">Start (s):</label>
+          <input type="number" id="start-global" min="0" max="${Math.floor(maxDuration)}" value="0" step="1"/>
+        </div>
+        <div>
+          <label class="small">End (s):</label>
+          <input type="number" id="end-global" min="0" max="${Math.floor(maxDuration)}" value="${Math.floor(maxDuration)}" step="1"/>
+        </div>
+        <button onclick="updateAllStats()">Calculate Stats for All</button>
+      </div>
+      
+      <div class="slider-container">
+        <span class="small">Start:</span>
+        <input type="range" id="slider-start-global" min="0" max="${Math.floor(maxDuration)}" value="0" step="1"/>
+        <span class="small">End:</span>
+        <input type="range" id="slider-end-global" min="0" max="${Math.floor(maxDuration)}" value="${Math.floor(maxDuration)}" step="1"/>
+      </div>
+    </div>
+  `;
+}
+
+function displayStatsTable(allStats, rangeLabel){
+  if(!allStats || allStats.length === 0) return '';
+  
+  let html = `
+    <div class="box">
+      <h3 style="margin:0 0 12px">${rangeLabel}</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Iteration</th>
+            <th>Packets</th>
+            <th>Min (ms)</th>
+            <th>Max (ms)</th>
+            <th>Avg (ms)</th>
+            <th>Std Err (ms)</th>
+            <th>P50 (ms)</th>
+            <th>P75 (ms)</th>
+            <th>P90 (ms)</th>
+            <th>P95 (ms)</th>
+            <th>P99 (ms)</th>
+            <th>Avg Jitter (ms)</th>
+            <th>Loss/min</th>
+          </tr></thead>
+          <tbody>
+  `;
+  
+  allStats.forEach((stats, idx) => {
+    if(!stats){
+      html += `<tr><td>${idx+1}</td><td colspan="12">No data</td></tr>`;
+      return;
+    }
+    html += `<tr>
+      <td>${idx+1}</td>
+      <td>${stats.count}</td>
+      <td>${safeToFixed(stats.minLatency,2)}</td>
+      <td>${safeToFixed(stats.maxLatency,2)}</td>
+      <td>${safeToFixed(stats.avgLatency,2)}</td>
+      <td>${safeToFixed(stats.stdErr,2)}</td>
+      <td>${safeToFixed(stats.p50,2)}</td>
+      <td>${safeToFixed(stats.p75,2)}</td>
+      <td>${safeToFixed(stats.p90,2)}</td>
+      <td>${safeToFixed(stats.p95,2)}</td>
+      <td>${safeToFixed(stats.p99,2)}</td>
+      <td>${safeToFixed(stats.avgJitter,2)}</td>
+      <td>${safeToFixed(stats.packetLossPerMin,2)}</td>
+    </tr>`;
+  });
+  
+  html += `</tbody></table></div></div>`;
+  return html;
+}
+
+function latexStatsTable(allStats, rangeLabel){
+  if(!allStats || allStats.length === 0) return '';
+  
+  let latex = `\\begin{table}[htbp]
+\\centering
+\\caption{${rangeLabel}}
+\\begin{tabular}{|c|c|c|c|c|c|c|c|c|c|c|c|c|}
+\\hline
+Iter & Pkts & Min & Max & Avg & SE & P50 & P75 & P90 & P95 & P99 & Jitter & Loss/min \\\\
+\\hline
+`;
+  
+  allStats.forEach((stats, idx) => {
+    if(!stats){
+      latex += `${idx+1} & \\multicolumn{12}{c|}{No data} \\\\\n`;
+      return;
+    }
+    latex += `${idx+1} & ${stats.count} & ${safeToFixed(stats.minLatency,2)} & ${safeToFixed(stats.maxLatency,2)} & ${safeToFixed(stats.avgLatency,2)} & ${safeToFixed(stats.stdErr,2)} & ${safeToFixed(stats.p50,2)} & ${safeToFixed(stats.p75,2)} & ${safeToFixed(stats.p90,2)} & ${safeToFixed(stats.p95,2)} & ${safeToFixed(stats.p99,2)} & ${safeToFixed(stats.avgJitter,2)} & ${safeToFixed(stats.packetLossPerMin,2)} \\\\\n`;
+  });
+  
+  latex += `\\hline
+\\end{tabular}
+\\end{table}`;
+  
+  return latex;
+}
+
+window.updateAllStats = function(){
+  const startSec = parseFloat(document.getElementById('start-global').value);
+  const endSec = parseFloat(document.getElementById('end-global').value);
+  
+  const statsInRange = [];
+  const statsOutRange = [];
+  
+  currentAnalyses.forEach(analysis => {
+    if(!analysis){
+      statsInRange.push(null);
+      statsOutRange.push(null);
+      return;
+    }
+    
+    const inRange = filterPacketsByTimeRange(analysis.packets, startSec, endSec);
+    const outRange = analysis.packets.filter(p => p.timeSeconds < startSec || p.timeSeconds > endSec);
+    
+    const durationMinutesIn = (endSec - startSec) / 60;
+    const durationMinutesOut = (analysis.durationSeconds - (endSec - startSec)) / 60;
+    
+    const seqRangeIn = getSeqRange(inRange);
+    const seqRangeOut = getSeqRange(outRange);
+    
+    statsInRange.push(computeStats(inRange, durationMinutesIn, seqRangeIn.min, seqRangeIn.max));
+    statsOutRange.push(computeStats(outRange, durationMinutesOut, seqRangeOut.min, seqRangeOut.max));
+  });
+  
+  let output = displayStatsTable(statsInRange, `In Range: ${startSec}s to ${endSec}s`);
+  output += displayStatsTable(statsOutRange, `Outside Range`);
+  
+  output += `<div class="latex">${latexStatsTable(statsInRange, `In Range ${startSec}s-${endSec}s`)}</div>`;
+  output += `<div class="latex">${latexStatsTable(statsOutRange, 'Outside Range')}</div>`;
+  
+  document.getElementById('stats-output').innerHTML = output;
+}
+
+/* ============================
+   Wire controls
+   ============================ */
+
+analyzeBtn.addEventListener('click', async ()=>{
+  resultDiv.innerHTML = '<div class="box small">Parsing files...</div>';
+  currentAnalyses = [];
+  
+  for(let i=0; i<uploadedFiles.length; i++){
+    const f = uploadedFiles[i];
+    try{
+      const text = await f.text();
+      const analysis = analyzePingText(text);
+      currentAnalyses.push(analysis);
+    }catch(e){
+      currentAnalyses.push(null);
+    }
+  }
+  
+  const validAnalyses = currentAnalyses.filter(a => a !== null);
+  if(validAnalyses.length === 0){
+    resultDiv.innerHTML = '<div class="warning">No valid ping data found in any file</div>';
+    return;
+  }
+  
+  const maxDuration = Math.max(...validAnalyses.map(a => a.durationSeconds));
+  
+  let out = createRangeControls(maxDuration);
+  out += '<div id="stats-output"></div>';
+  
+  resultDiv.innerHTML = out;
+  
+  // Wire up sliders
+  const startInput = document.getElementById('start-global');
+  const endInput = document.getElementById('end-global');
+  const startSlider = document.getElementById('slider-start-global');
+  const endSlider = document.getElementById('slider-end-global');
+  
+  startSlider.addEventListener('input', ()=>{
+    startInput.value = startSlider.value;
+  });
+  endSlider.addEventListener('input', ()=>{
+    endInput.value = endSlider.value;
+  });
+  startInput.addEventListener('change', ()=>{
+    startSlider.value = startInput.value;
+  });
+  endInput.addEventListener('change', ()=>{
+    endSlider.value = endInput.value;
+  });
+});
+
+clearBtn.addEventListener('click', ()=>{ clearFiles(); });
+
+window.removeFile = removeFile;
+
+</script>
+</body>
+</html>
