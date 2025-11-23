@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Ping Analyzer — RTT-based Jitter (Accurate)</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  body{font-family:Arial,Helvetica,sans-serif;background:#f5f7fb;margin:20px}
+  .container{max-width:1100px;margin:0 auto;background:#fff;padding:24px;border-radius:8px;box-shadow:0 6px 18px rgba(20,30,60,.06)}
+  h1{margin:0 0 8px;font-size:22px;color:#1f2937}
+  p.lead{color:#4b5563;margin-top:0}
+  .upload{border:2px dashed #2563eb;border-radius:8px;padding:26px;text-align:center;background:#fbfdff;cursor:pointer}
+  .upload.dragover{background:#e6f0ff;border-color:#1e40af}
+  .controls{margin-top:14px;display:flex;gap:8px;flex-wrap:wrap}
+  button{background:#2563eb;color:#fff;border:none;padding:10px 14px;border-radius:6px;cursor:pointer}
+  button.secondary{background:#6b7280}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .file-list{margin-top:16px}
+  .file-item{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-radius:6px;background:#f8fafc;margin:6px 0}
+  .result{margin-top:22px}
+  .box{padding:14px;border-radius:8px;background:#f8fafc;margin-bottom:14px}
+  .table-wrap{overflow-x:auto;margin-top:10px}
+  table{width:100%;border-collapse:collapse}
+  th,td{padding:8px;border:1px solid #e6eef8;text-align:left}
+  th{background:#1e40af;color:#fff}
+  .latex{background:#0f172a;color:#e6eef8;padding:12px;border-radius:6px;white-space:pre-wrap;font-family:monospace;font-size:13px;margin-top:8px}
+  .small{font-size:13px;color:#374151}
+  .tag{display:inline-block;padding:6px 8px;background:#e6f4ff;border-radius:999px;color:#0f172a;margin-right:6px;font-weight:600}
+  .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:12px}
+  .stat{background:#fff;padding:12px;border-radius:8px;border:1px solid #eef2ff}
+  .stat strong{display:block;font-size:18px}
+  .warning{background:#fff7ed;border-left:4px solid #f59e0b;padding:10px;border-radius:6px}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Ping Analyzer — RTT-based Jitter (Accurate)</h1>
+  <p class="lead">Upload one or more ping log files (lines with timestamps and <code>icmp_seq=</code> and <code>time=</code>). This tool computes RTT-based jitter (|RTTₙ − RTTₙ₋₁|) only for consecutive sequence numbers. <strong style="color:#dc2626">Packets with RTT ≥ 500ms are treated as lost and excluded from jitter calculations.</strong></p>
+
+  <div class="upload" id="uploadArea">📂 Click or drag & drop ping log files here (format: <code>YYYY-MM-DD HH:MM:SS ... icmp_seq=N ... time=XX.X ms</code>)</div>
+  <input id="fileInput" type="file" accept=".txt,.log,text/*" multiple style="display:none"/>
+
+  <div class="file-list" id="fileList"></div>
+
+  <div class="controls">
+    <button id="analyzeBtn" disabled>Analyze Files</button>
+    <button id="clearBtn" class="secondary" disabled>Clear</button>
+  </div>
+
+  <div class="result" id="result"></div>
+</div>
+
+<script>
+/* ============================
+   Utility functions
+   ============================ */
+function percentile(arr, p) {
+  if (!arr || arr.length === 0) return 0;
+  const s = arr.slice().sort((a,b)=>a-b);
+  const idx = (p/100)*(s.length-1);
+  const lo = Math.floor(idx), hi = Math.ceil(idx);
+  const w = idx - lo;
+  return s[lo]*(1-w) + s[hi]*w;
+}
+function mean(arr){
+  if(!arr || arr.length===0) return 0;
+  return arr.reduce((a,b)=>a+b,0)/arr.length;
+}
+function msFromDateStr(dateStr, timeStr){
+  // dateStr: YYYY-MM-DD  timeStr: HH:MM:SS
+  // create using ISO so Date parser is consistent
+  return new Date(dateStr + 'T' + timeStr).getTime();
+}
+function safeToFixed(v, d=2){ return (isFinite(v) ? v.toFixed(d) : 'NaN'); }
+
+/* ============================
+   UI / File handling
+   ============================ */
+let uploadedFiles = [];
+const uploadArea = document.getElementById('uploadArea');
+const fileInput = document.getElementById('fileInput');
+const fileListDiv = document.getElementById('fileList');
+const analyzeBtn = document.getElementById('analyzeBtn');
+const clearBtn = document.getElementById('clearBtn');
+const resultDiv = document.getElementById('result');
+
+uploadArea.addEventListener('click', ()=>fileInput.click());
+uploadArea.addEventListener('dragover', (e)=>{ e.preventDefault(); uploadArea.classList.add('dragover'); });
+uploadArea.addEventListener('dragleave', ()=>uploadArea.classList.remove('dragover'));
+uploadArea.addEventListener('drop', (e)=>{ e.preventDefault(); uploadArea.classList.remove('dragover'); addFiles(Array.from(e.dataTransfer.files)); });
+
+fileInput.addEventListener('change', (e)=>{ addFiles(Array.from(e.target.files)); fileInput.value = ''; });
+
+function addFiles(files){
+  files.forEach(f=>{
+    if(!uploadedFiles.find(u=>u.name===f.name)) uploadedFiles.push(f);
+  });
+  renderFileList();
+}
+function removeFile(idx){ uploadedFiles.splice(idx,1); renderFileList(); }
+function clearFiles(){ uploadedFiles=[]; renderFileList(); resultDiv.innerHTML=''; }
+
+function renderFileList(){
+  fileListDiv.innerHTML='';
+  if(uploadedFiles.length===0){
+    analyzeBtn.disabled=true; clearBtn.disabled=true;
+    return;
+  }
+  uploadedFiles.forEach((f,i)=>{
+    const el = document.createElement('div'); el.className='file-item';
+    el.innerHTML = `<div><strong>${i+1}.</strong> ${f.name}</div>
+      <div><button onclick="removeFile(${i})" class="secondary">Remove</button></div>`;
+    fileListDiv.appendChild(el);
+  });
+  analyzeBtn.disabled=false; clearBtn.disabled=false;
+}
+
+/* ============================
+   Parsing & Analysis
+   ============================ */
+
+const PING_LINE_RE = /^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2}).*icmp_seq=(\d+).*time=([\d.]+)\s*ms/i;
+const HIGH_LATENCY_THRESHOLD = 500; // ms
+
+function analyzePingText(text){
+  const lines = text.split(/\r?\n/);
+  const allPackets = []; // All packets parsed, including high-latency ones
+  const validPackets = []; // Packets below threshold for jitter calculation
+  let minSeq = Infinity, maxSeq = -Infinity;
+
+  for(const line of lines){
+    const m = line.match(PING_LINE_RE);
+    if(!m) continue;
+    const date = m[1], time = m[2], seq = parseInt(m[3],10), rtt = parseFloat(m[4]);
+    const ts = msFromDateStr(date, time);
+    const packet = {seq, timestamp: ts, rtt};
+    allPackets.push(packet);
+    
+    if(seq < minSeq) minSeq = seq;
+    if(seq > maxSeq) maxSeq = seq;
+    
+    // Only add to valid if below threshold
+    if(rtt < HIGH_LATENCY_THRESHOLD){
+      validPackets.push(packet);
+    }
+  }
+
+  if(allPackets.length===0) return null;
+
+  // Sort by sequence number
+  allPackets.sort((a,b)=>a.seq - b.seq);
+  validPackets.sort((a,b)=>a.seq - b.seq);
+
+  // Calculate expected, received, lost
+  const totalExpected = (maxSeq - minSeq + 1);
+  const allReceivedCount = allPackets.length;
+  const validReceivedCount = validPackets.length;
+  const highLatencyCount = allReceivedCount - validReceivedCount;
+  const totalLostCount = totalExpected - allReceivedCount + highLatencyCount;
+  const lostPercent = (totalLostCount / totalExpected) * 100;
+
+  // Build lost list (including high-latency packets)
+  const seqSet = new Set(validPackets.map(p=>p.seq));
+  const lostList = [];
+  for(let s=minSeq; s<=maxSeq; s++){
+    if(!seqSet.has(s)) lostList.push(s);
+  }
+
+  // Compute RTT-based jitter only from valid packets
+  const jitterDiffs = [];
+  let prevPacket = null;
+  let outOfOrder = 0;
+
+  for(let i=0;i<validPackets.length;i++){
+    const cur = validPackets[i];
+    if(prevPacket){
+      if(cur.seq <= prevPacket.seq) outOfOrder++;
+      // Only count jitter for consecutive sequences
+      if(cur.seq === prevPacket.seq + 1){
+        jitterDiffs.push(Math.abs(cur.rtt - prevPacket.rtt));
+      }
+    }
+    prevPacket = cur;
+  }
+
+  // RTT statistics (only from valid packets)
+  const rtts = validPackets.map(p=>p.rtt);
+  const minRtt = rtts.length ? Math.min(...rtts) : 0;
+  const maxRtt = rtts.length ? Math.max(...rtts) : 0;
+
+  // Jitter summary
+  const avgJitter = jitterDiffs.length ? mean(jitterDiffs) : 0;
+  const medJitter = percentile(jitterDiffs,50);
+  const p75 = percentile(jitterDiffs,75);
+  const p90 = percentile(jitterDiffs,90);
+  const p95 = percentile(jitterDiffs,95);
+  const p99 = percentile(jitterDiffs,99);
+  const maxJitter = jitterDiffs.length ? Math.max(...jitterDiffs) : 0;
+
+  // IQR-based separation
+  const q1 = percentile(jitterDiffs,25), q3 = percentile(jitterDiffs,75);
+  const iqr = q3 - q1;
+  const lb = q1 - 1.5*iqr, ub = q3 + 1.5*iqr;
+  const normalJ = jitterDiffs.filter(j => j >= lb && j <= ub);
+  const spikes = jitterDiffs.filter(j => j < lb || j > ub);
+  const normalJAvg = normalJ.length ? mean(normalJ) : 0;
+  const spikeJAvg = spikes.length ? mean(spikes) : 0;
+  const spikeRate = jitterDiffs.length ? (spikes.length / jitterDiffs.length) * 100 : 0;
+
+  // threshold (3x median)
+  const threshold = 3 * medJitter;
+  const normalT = jitterDiffs.filter(j => j < threshold);
+  const spikeT = jitterDiffs.filter(j => j >= threshold);
+  const normalTavg = normalT.length ? mean(normalT) : 0;
+  const spikeTavg = spikeT.length ? mean(spikeT) : 0;
+  const spikeTRate = jitterDiffs.length ? (spikeT.length / jitterDiffs.length) * 100 : 0;
+
+  return {
+    allPackets, validPackets,
+    minSeq, maxSeq,
+    totalExpected, allReceivedCount, validReceivedCount, highLatencyCount, totalLostCount, lostPercent, lostList,
+    minRtt, maxRtt,
+    outOfOrderCount: outOfOrder, outOfOrderPercent: validReceivedCount ? (outOfOrder / validReceivedCount) * 100 : 0,
+    jitterDiffs,
+    avgJitter, medJitter, p75, p90, p95, p99, maxJitter,
+    normalJAvg, spikeJAvg, spikeRate,
+    normalTavg, spikeTavg, spikeTRate,
+    hasTimestamps: true
+  };
+}
+
+/* ============================
+   Display helpers
+   ============================ */
+
+function formatResultSummary(analysis){
+  return `
+    <div class="box">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div class="tag">RTT jitter</div>
+          <div class="small">Packets expected: <strong>${analysis.totalExpected}</strong> · Valid (RTT &lt; 500ms): <strong>${analysis.validReceivedCount}</strong> · High Latency (≥ 500ms): <strong>${analysis.highLatencyCount}</strong> · Lost: <strong>${analysis.totalLostCount}</strong> (${safeToFixed(analysis.lostPercent,2)}%)</div>
+        </div>
+        <div style="text-align:right">
+          <div class="small">Min RTT / Max RTT</div>
+          <div style="font-weight:700">${safeToFixed(analysis.minRtt,2)} ms / ${safeToFixed(analysis.maxRtt,2)} ms</div>
+        </div>
+      </div>
+
+      <div class="stat-grid" style="margin-top:12px">
+        <div class="stat"><small>Avg jitter (consecutive)</small><strong>${safeToFixed(analysis.avgJitter,2)} ms</strong></div>
+        <div class="stat"><small>Median jitter</small><strong>${safeToFixed(analysis.medJitter,2)} ms</strong></div>
+        <div class="stat"><small>99th percentile jitter</small><strong>${safeToFixed(analysis.p99,2)} ms</strong></div>
+        <div class="stat"><small>Spike rate (IQR)</small><strong>${safeToFixed(analysis.spikeRate,2)} %</strong></div>
+        <div class="stat"><small>High latency packets (≥ 500ms)</small><strong>${analysis.highLatencyCount}</strong></div>
+        <div class="stat"><small>Out-of-order</small><strong>${analysis.outOfOrderCount} (${safeToFixed(analysis.outOfOrderPercent,2)}%)</strong></div>
+      </div>
+    </div>
+  `;
+}
+
+function makeHtmlTable(analysis){
+  return `
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Metric</th><th>Value</th>
+        </tr></thead>
+        <tbody>
+          <tr><td>Total packets expected</td><td>${analysis.totalExpected}</td></tr>
+          <tr><td>Valid packets received (RTT &lt; 500ms)</td><td>${analysis.validReceivedCount}</td></tr>
+          <tr><td>High latency packets (RTT ≥ 500ms)</td><td>${analysis.highLatencyCount}</td></tr>
+          <tr><td>Total lost (including high latency)</td><td>${analysis.totalLostCount} (${safeToFixed(analysis.lostPercent,2)}%)</td></tr>
+          <tr><td>Avg jitter (consecutive, valid packets only)</td><td>${safeToFixed(analysis.avgJitter,2)} ms</td></tr>
+          <tr><td>Median jitter</td><td>${safeToFixed(analysis.medJitter,2)} ms</td></tr>
+          <tr><td>75%</td><td>${safeToFixed(analysis.p75,2)} ms</td></tr>
+          <tr><td>90%</td><td>${safeToFixed(analysis.p90,2)} ms</td></tr>
+          <tr><td>95%</td><td>${safeToFixed(analysis.p95,2)} ms</td></tr>
+          <tr><td>99%</td><td>${safeToFixed(analysis.p99,2)} ms</td></tr>
+          <tr><td>Max jitter (consecutive, valid only)</td><td>${safeToFixed(analysis.maxJitter,2)} ms</td></tr>
+          <tr><td>Min RTT (valid packets)</td><td>${safeToFixed(analysis.minRtt,2)} ms</td></tr>
+          <tr><td>Max RTT (valid packets)</td><td>${safeToFixed(analysis.maxRtt,2)} ms</td></tr>
+          <tr><td>Lost sequences</td><td>${analysis.lostList.length ? analysis.lostList.join(', ') : 'None'}</td></tr>
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function latexAggregateTable(name, analysis){
+  return `\\begin{table}[htbp]
+\\centering
+\\caption{Ping analysis — ${name}}
+\\begin{tabular}{|l|r|}
+\\hline
+Metric & Value \\\\
+\\hline
+Packets expected & ${analysis.totalExpected} \\\\
+Valid packets (RTT < 500ms) & ${analysis.validReceivedCount} \\\\
+High latency (RTT >= 500ms) & ${analysis.highLatencyCount} \\\\
+Total lost & ${analysis.totalLostCount} (${safeToFixed(analysis.lostPercent,2)}\\%) \\\\
+Min RTT (ms) & ${safeToFixed(analysis.minRtt,2)} \\\\
+Max RTT (ms) & ${safeToFixed(analysis.maxRtt,2)} \\\\
+Avg jitter (ms) & ${safeToFixed(analysis.avgJitter,2)} \\\\
+Median jitter (ms) & ${safeToFixed(analysis.medJitter,2)} \\\\
+99th jitter (ms) & ${safeToFixed(analysis.p99,2)} \\\\
+Out-of-order & ${analysis.outOfOrderCount} (${safeToFixed(analysis.outOfOrderPercent,2)}\\%) \\\\
+\\hline
+\\end{tabular}
+\\end{table}`;
+}
+
+function latexMergedTable(results){
+  let latex = `\\begin{table}[htbp]
+\\centering
+\\caption{Merged Ping Analysis Summary}
+\\begin{tabular}{|c|c|c|c|c|c|c|c|c|}
+\\hline
+Iteration & Valid & High Lat & Avg Jitter & Median & 75\\% & 90\\% & 99\\% & Loss \\\\
+ & Pkts & Pkts & (ms) & (ms) & (ms) & (ms) & (ms) & (\\%) \\\\
+\\hline
+`;
+  
+  let iteration = 1;
+  results.forEach(r => {
+    if(r.error) return;
+    const a = r.analysis;
+    latex += `${iteration} & ${a.validReceivedCount} & ${a.highLatencyCount} & ${safeToFixed(a.avgJitter,2)} & ${safeToFixed(a.medJitter,2)} & ${safeToFixed(a.p75,2)} & ${safeToFixed(a.p90,2)} & ${safeToFixed(a.p99,2)} & ${safeToFixed(a.lostPercent,2)} \\\\\n`;
+    iteration++;
+  });
+  
+  latex += `\\hline
+\\end{tabular}
+\\end{table}`;
+  
+  return latex;
+}
+
+/* ============================
+   Wire analyze button
+   ============================ */
+
+analyzeBtn.addEventListener('click', async ()=>{
+  resultDiv.innerHTML = '<div class="box small">Parsing files and computing statistics…</div>';
+  const results = [];
+  let hasAny = false;
+  for(let i=0;i<uploadedFiles.length;i++){
+    const f = uploadedFiles[i];
+    try{
+      const text = await f.text();
+      const analysis = analyzePingText(text);
+      if(analysis){
+        results.push({fileName: f.name, analysis});
+        hasAny = true;
+      } else {
+        results.push({fileName: f.name, error:true});
+      }
+    }catch(e){
+      results.push({fileName: f.name, error:true});
+    }
+  }
+
+  let out = '';
+  if(!hasAny){
+    out = `<div class="warning">No valid ping lines found. Make sure logs include timestamps and <code>icmp_seq=</code> and <code>time=</code> fields (e.g. "2025-11-13 11:01:09 ... icmp_seq=10 ... time=57.7 ms").</div>`;
+    resultDiv.innerHTML = out; return;
+  }
+
+  if(results.filter(r=>!r.error).length > 1){
+    out += `<div class="box"><h2 style="margin:0 0 12px">Merged Summary</h2>`;
+    out += `<div class="table-wrap"><table><thead><tr>
+      <th>Iteration</th>
+      <th>Valid Packets</th>
+      <th>High Latency</th>
+      <th>Avg Jitter (ms)</th>
+      <th>Median (ms)</th>
+      <th>75% (ms)</th>
+      <th>90% (ms)</th>
+      <th>99% (ms)</th>
+      <th>Total Loss (%)</th>
+    </tr></thead><tbody>`;
+    
+    let iteration = 1;
+    results.forEach(r=>{
+      if(r.error) return;
+      const a = r.analysis;
+      out += `<tr>
+        <td>${iteration}</td>
+        <td>${a.validReceivedCount}</td>
+        <td>${a.highLatencyCount}</td>
+        <td>${safeToFixed(a.avgJitter,2)}</td>
+        <td>${safeToFixed(a.medJitter,2)}</td>
+        <td>${safeToFixed(a.p75,2)}</td>
+        <td>${safeToFixed(a.p90,2)}</td>
+        <td>${safeToFixed(a.p99,2)}</td>
+        <td>${safeToFixed(a.lostPercent,2)}</td>
+      </tr>`;
+      iteration++;
+    });
+    
+    out += `</tbody></table></div></div>`;
+    out += `<div class="latex">${latexMergedTable(results)}</div>`;
+  }
+
+  results.forEach((r, idx)=>{
+    if(r.error){
+      out += `<div class="box"><strong>${r.fileName}</strong> — <span style="color:#b91c1c">No valid ping entries found</span></div>`;
+      return;
+    }
+    const analysis = r.analysis;
+    out += `<div class="box"><strong>${r.fileName}</strong></div>`;
+    out += formatResultSummary(analysis);
+    out += `<div class="box"><h3 style="margin:0 0 8px">Details</h3>` + makeHtmlTable(analysis) + `</div>`;
+    out += `<div class="latex">${latexAggregateTable(r.fileName, analysis)}</div>`;
+  });
+
+  resultDiv.innerHTML = out;
+});
+
+clearBtn.addEventListener('click', ()=>{ clearFiles(); });
+window.removeFile = removeFile;
+
+</script>
+</body>
+</html>
