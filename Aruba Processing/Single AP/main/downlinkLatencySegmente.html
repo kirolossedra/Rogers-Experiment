@@ -176,7 +176,7 @@ function computeStats(packets, durationMinutes, minSeq, maxSeq){
   
   // Filter out packets with latency > 500ms (treat as lost)
   const validPackets = packets.filter(p => p.rtt <= 500);
-  const extremePackets = packets.filter(p => p.rtt > 500);
+  const extremePackets = packets.filter(p => p.rtt > 800);
   const extremeSeqs = extremePackets.map(p => p.seq).sort((a,b)=>a-b);
   
   if(validPackets.length === 0) {
