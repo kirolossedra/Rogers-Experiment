@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>5G Statistical Analyzer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 20px; }
+        .container { max-width: 1400px; margin: 0 auto; background: white; border-radius: 15px; padding: 30px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+        h1 { color: #667eea; text-align: center; margin-bottom: 30px; }
+        .upload { background: #f8f9fa; padding: 25px; border-radius: 10px; margin-bottom: 30px; }
+        label { display: block; font-weight: 600; margin: 15px 0 8px; color: #333; }
+        input[type="file"], select { width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px; margin-bottom: 10px; }
+        button { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 15px 40px; font-size: 16px; font-weight: 600; border-radius: 8px; cursor: pointer; margin: 10px auto; display: block; }
+        button:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4); }
+        .chart-wrapper { background: #f8f9fa; padding: 20px; border-radius: 10px; margin: 20px 0; }
+        .chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px; }
+        .chart-title { font-size: 1.2em; font-weight: 600; color: #333; }
+        .controls { display: flex; gap: 15px; align-items: center; }
+        .slider { display: flex; align-items: center; gap: 10px; background: white; padding: 8px 15px; border-radius: 8px; }
+        .slider input { width: 150px; }
+        .slider span { font-weight: 700; color: #667eea; min-width: 30px; text-align: center; }
+        .copy-btn { background: #43e97b; padding: 8px 15px; font-size: 14px; margin: 0; }
+        .status { padding: 12px; border-radius: 8px; margin: 10px 0; text-align: center; display: none; }
+        .status.show { display: block; }
+        .status.error { background: #f8d7da; color: #721c24; }
+        .status.success { background: #d4edda; color: #155724; }
+        .opts { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin: 15px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📡 5G Statistical Analyzer</h1>
+        
+        <div class="upload">
+            <label>5G JSON Log File:</label>
+            <input type="file" id="jsonFile" accept=".json">
+            
+            <label>Performance Test Files (iperf3/ping):</label>
+            <input type="file" id="testFiles" accept=".txt,.log" multiple>
+            
+            <div class="opts">
+                <div>
+                    <label>Test Type:</label>
+                    <select id="testType">
+                        <option value="iperf3">iperf3 (Throughput)</option>
+                        <option value="ping">ping (Latency)</option>
+                    </select>
+                </div>
+                <div>
+                    <label>Metric:</label>
+                    <select id="metric">
+                        <option value="sinr">SINR</option>
+                        <option value="rsrp">RSRP</option>
+                        <option value="rsrq">RSRQ</option>
+                    </select>
+                </div>
+            </div>
+            
+            <button onclick="analyze()">Analyze & Plot</button>
+            <div id="status" class="status"></div>
+        </div>
+        
+        <div id="charts"></div>
+    </div>
+
+    <script>
+        let jsonData = null, charts = [];
+
+        document.getElementById('jsonFile').onchange = async (e) => {
+            try {
+                let txt = await e.target.files[0].text();
+                jsonData = txt.trim().startsWith('[') ? JSON.parse(txt) : txt.trim().split('\n').filter(l => l.trim()).map(l => JSON.parse(l.trim().replace(/,$/, '')));
+                msg('JSON loaded', 'success');
+            } catch (err) {
+                msg('JSON parse error', 'error');
+            }
+        };
+
+        function msg(text, type) {
+            let s = document.getElementById('status');
+            s.textContent = text;
+            s.className = `status show ${type}`;
+            setTimeout(() => s.style.display = 'none', 3000);
+        }
+
+        function smooth(data, w) {
+            if (w <= 1) return data;
+            return data.map((_, i) => {
+                let s = Math.max(0, i - Math.floor(w/2));
+                let e = Math.min(data.length, i + Math.ceil(w/2));
+                let win = data.slice(s, e).filter(v => v != null);
+                return win.length ? win.reduce((a,b) => a+b) / win.length : null;
+            });
+        }
+
+        async function copyChart(chart) {
+            chart.options.scales.x.grid.display = true;
+            chart.options.scales.y.grid.display = true;
+            chart.options.scales.y1.grid.display = true;
+            chart.update();
+            
+            let bg = {
+                id: 'bg',
+                beforeDraw: (c) => {
+                    let ctx = c.canvas.getContext('2d');
+                    ctx.save();
+                    ctx.globalCompositeOperation = 'destination-over';
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, c.width, c.height);
+                    ctx.restore();
+                }
+            };
+            Chart.register(bg);
+            chart.update();
+            
+            try {
+                let blob = await new Promise(r => chart.canvas.toBlob(r));
+                await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]);
+                msg('Chart copied!', 'success');
+            } catch (e) {
+                msg('Copy failed', 'error');
+            }
+            
+            Chart.unregister(bg);
+            chart.options.scales.x.grid.display = false;
+            chart.options.scales.y.grid.display = false;
+            chart.options.scales.y1.grid.display = false;
+            chart.update();
+        }
+
+        async function analyze() {
+            if (!jsonData || !document.getElementById('testFiles').files.length) {
+                msg('Provide JSON and test files', 'error');
+                return;
+            }
+            
+            let testType = document.getElementById('testType').value;
+            let metric = document.getElementById('metric').value;
+            let testFiles = document.getElementById('testFiles').files;
+            
+            document.getElementById('charts').innerHTML = '';
+            charts = [];
+            
+            let allRuns = [];
+            
+            for (let file of testFiles) {
+                let txt = await file.text();
+                let lines = txt.split('\n');
+                let perf = [], start = null, end = null;
+                
+                if (testType === 'iperf3') {
+                    for (let l of lines) {
+                        let m = l.match(/^(\w{3}\s+\w{3}\s+\d+\s+\d{2}:\d{2}:\d{2}\s+\d{4})/);
+                        if (m) {
+                            let t = new Date(m[1]).getTime() / 1000;
+                            if (!start) start = t;
+                            end = t;
+                            let th = l.match(/(\d+\.?\d*)\s+Mbits\/sec/);
+                            if (th) perf.push(parseFloat(th[1]));
+                        }
+                    }
+                } else {
+                    for (let l of lines) {
+                        let m = l.match(/^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})/);
+                        if (m) {
+                            let t = new Date(m[1]).getTime() / 1000;
+                            if (!start) start = t;
+                            end = t;
+                            let lat = l.match(/time=(\d+\.?\d*)\s*ms/);
+                            if (lat) perf.push(parseFloat(lat[1]));
+                        }
+                    }
+                }
+                
+                if (!start || !perf.length) continue;
+                
+                let filtered = jsonData.filter(d => d.timestamp >= start && d.timestamp <= end);
+                if (!filtered.length) continue;
+                
+                let vals = filtered.map(d => {
+                    let v = d['5G'] && d['5G'][metric];
+                    if (!v) return null;
+                    let num = parseFloat(v);
+                    return (metric === 'sinr' && num < 0) ? -1 : num;
+                }).filter(v => v !== null);
+                
+                allRuns.push({vals, perf});
+            }
+            
+            if (!allRuns.length) {
+                msg('No valid data', 'error');
+                return;
+            }
+            
+            let maxLen = Math.max(...allRuns.map(r => Math.max(r.vals.length, r.perf.length)));
+            allRuns.forEach(r => {
+                while(r.vals.length < maxLen) r.vals.push(null);
+                while(r.perf.length < maxLen) r.perf.push(null);
+            });
+            
+            let labels = Array.from({length: maxLen}, (_, i) => i);
+            let valsMean = [], valsStd = [], perfMean = [], perfStd = [];
+            
+            for (let i = 0; i < maxLen; i++) {
+                let vs = allRuns.map(r => r.vals[i]).filter(v => v != null);
+                let ps = allRuns.map(r => r.perf[i]).filter(v => v != null);
+                
+                valsMean[i] = vs.length ? vs.reduce((a,b) => a+b) / vs.length : null;
+                perfMean[i] = ps.length ? ps.reduce((a,b) => a+b) / ps.length : null;
+                
+                valsStd[i] = vs.length > 1 ? Math.sqrt(vs.map(v => (v - valsMean[i])**2).reduce((a,b) => a+b) / vs.length) : 0;
+                perfStd[i] = ps.length > 1 ? Math.sqrt(ps.map(v => (v - perfMean[i])**2).reduce((a,b) => a+b) / ps.length) : 0;
+            }
+            
+            createChart(`Aggregated (${allRuns.length} runs)`, labels, valsMean, valsStd, perfMean, perfStd, testType, metric);
+            
+            msg('Analysis complete!', 'success');
+        }
+
+        function createChart(name, labels, valsMean, valsStd, perfMean, perfStd, type, metric) {
+            let wrapper = document.createElement('div');
+            wrapper.className = 'chart-wrapper';
+            
+            let header = document.createElement('div');
+            header.className = 'chart-header';
+            header.innerHTML = `<div class="chart-title">${name}</div>`;
+            
+            let controls = document.createElement('div');
+            controls.className = 'controls';
+            
+            let slider = document.createElement('div');
+            slider.className = 'slider';
+            slider.innerHTML = '<label>Smooth:</label><input type="range" min="1" max="50" value="1"><span>1</span>';
+            let range = slider.querySelector('input');
+            let span = slider.querySelector('span');
+            controls.appendChild(slider);
+            
+            let copy = document.createElement('button');
+            copy.className = 'copy-btn';
+            copy.textContent = '📋 Copy';
+            controls.appendChild(copy);
+            
+            header.appendChild(controls);
+            wrapper.appendChild(header);
+            
+            let canvas = document.createElement('canvas');
+            wrapper.appendChild(canvas);
+            document.getElementById('charts').appendChild(wrapper);
+            
+            let valsUpper = valsMean.map((m, i) => m != null ? m + valsStd[i] : null);
+            let valsLower = valsMean.map((m, i) => m != null ? m - valsStd[i] : null);
+            let perfUpper = perfMean.map((m, i) => m != null ? m + perfStd[i] : null);
+            let perfLower = perfMean.map((m, i) => m != null ? m - perfStd[i] : null);
+            
+            let metricLabel = metric.toUpperCase() + (metric === 'sinr' ? ' (dB)' : ' (dBm)');
+            let perfLabel = type === 'iperf3' ? 'Throughput (Mbps)' : 'Latency (ms)';
+            
+            let chart = new Chart(canvas, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {label: metricLabel + ' +σ', data: valsUpper, borderColor: '#667eea40', backgroundColor: '#667eea10', fill: '+1', tension: 0.4, borderWidth: 1, pointRadius: 0, yAxisID: 'y', borderDash: [5,5]},
+                        {label: metricLabel + ' Mean', data: valsMean, borderColor: '#667eea', backgroundColor: '#667eea20', tension: 0.4, borderWidth: 3, pointRadius: 0, yAxisID: 'y', fill: false},
+                        {label: metricLabel + ' -σ', data: valsLower, borderColor: '#667eea40', backgroundColor: '#667eea10', fill: '-1', tension: 0.4, borderWidth: 1, pointRadius: 0, yAxisID: 'y', borderDash: [5,5]},
+                        {label: perfLabel + ' +σ', data: perfUpper, borderColor: '#ff6b6b40', backgroundColor: '#ff6b6b10', fill: '+1', tension: 0.4, borderWidth: 1, pointRadius: 0, yAxisID: 'y1', borderDash: [5,5]},
+                        {label: perfLabel + ' Mean', data: perfMean, borderColor: '#ff6b6b', backgroundColor: '#ff6b6b20', tension: 0.4, borderWidth: 3, pointRadius: 0, yAxisID: 'y1', fill: false},
+                        {label: perfLabel + ' -σ', data: perfLower, borderColor: '#ff6b6b40', backgroundColor: '#ff6b6b10', fill: '-1', tension: 0.4, borderWidth: 1, pointRadius: 0, yAxisID: 'y1', borderDash: [5,5]}
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    interaction: {mode: 'index', intersect: false},
+                    scales: {
+                        x: {title: {display: true, text: 'Time (s)', font: {weight: 'bold'}}, grid: {display: false}},
+                        y: {title: {display: true, text: metricLabel, font: {weight: 'bold'}}, position: 'left', grid: {display: false}},
+                        y1: {title: {display: true, text: perfLabel, font: {weight: 'bold'}}, position: 'right', grid: {display: false}}
+                    }
+                }
+            });
+            
+            charts.push({chart, rawValsMean: valsMean, rawValsStd: valsStd, rawPerfMean: perfMean, rawPerfStd: perfStd});
+            let idx = charts.length - 1;
+            
+            range.oninput = () => {
+                span.textContent = range.value;
+                let w = parseInt(range.value);
+                let sValsMean = smooth(charts[idx].rawValsMean, w);
+                let sValsStd = smooth(charts[idx].rawValsStd, w);
+                let sPerfMean = smooth(charts[idx].rawPerfMean, w);
+                let sPerfStd = smooth(charts[idx].rawPerfStd, w);
+                
+                chart.data.datasets[0].data = sValsMean.map((m, i) => m != null ? m + sValsStd[i] : null);
+                chart.data.datasets[1].data = sValsMean;
+                chart.data.datasets[2].data = sValsMean.map((m, i) => m != null ? m - sValsStd[i] : null);
+                chart.data.datasets[3].data = sPerfMean.map((m, i) => m != null ? m + sPerfStd[i] : null);
+                chart.data.datasets[4].data = sPerfMean;
+                chart.data.datasets[5].data = sPerfMean.map((m, i) => m != null ? m - sPerfStd[i] : null);
+                chart.update();
+            };
+            
+            copy.onclick = () => copyChart(chart);
+        }
+    </script>
+</body>
+</html>
