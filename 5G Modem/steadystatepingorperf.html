@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>iperf3 Statistics Analyzer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 0;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .tab {
+            flex: 1;
+            padding: 15px;
+            background: #f5f7fa;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            color: #666;
+            transition: all 0.3s;
+            border-bottom: 3px solid transparent;
+        }
+
+        .tab:hover {
+            background: #e8ebf0;
+        }
+
+        .tab.active {
+            background: white;
+            color: #667eea;
+            border-bottom: 3px solid #667eea;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .input-section {
+            margin-bottom: 30px;
+        }
+
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 200px;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            resize: vertical;
+            transition: border-color 0.3s;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .button-container {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            font-size: 16px;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .results {
+            display: none;
+        }
+
+        .results.show {
+            display: block;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            transition: transform 0.2s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .stat-label {
+            font-size: 14px;
+            color: #666;
+            font-weight: 600;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: #333;
+        }
+
+        .stat-unit {
+            font-size: 16px;
+            color: #666;
+            margin-left: 5px;
+        }
+
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .data-table th {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+        }
+
+        .data-table td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .data-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .data-table tr:hover {
+            background-color: #f5f7fa;
+        }
+
+        .error {
+            background: #fee;
+            color: #c33;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #c33;
+            margin-bottom: 20px;
+        }
+
+        .info {
+            background: #e3f2fd;
+            color: #1565c0;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #1565c0;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Network Statistics Analyzer</h1>
+            <p>Analyze throughput from iperf3 or latency from ping</p>
+        </div>
+        
+        <div class="content">
+            <div class="tabs">
+                <button class="tab active" onclick="switchTab('throughput')">Throughput (iperf3)</button>
+                <button class="tab" onclick="switchTab('latency')">Latency (ping)</button>
+            </div>
+
+            <div id="throughput-tab" class="tab-content active">
+                <div class="input-section">
+                    <label for="iperf-input">Paste iperf3 Output:</label>
+                    <textarea id="iperf-input" placeholder="Paste your iperf3 output here..."></textarea>
+                </div>
+
+                <div class="button-container">
+                    <button onclick="analyzeThroughput()">Analyze Throughput</button>
+                </div>
+
+                <div id="throughput-results" class="results"></div>
+            </div>
+
+            <div id="latency-tab" class="tab-content">
+                <div class="input-section">
+                    <label for="ping-input">Paste Ping Output:</label>
+                    <textarea id="ping-input" placeholder="Paste your ping output here..."></textarea>
+                </div>
+
+                <div class="button-container">
+                    <button onclick="analyzeLatency()">Analyze Latency</button>
+                </div>
+
+                <div id="latency-results" class="results"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function switchTab(tabName) {
+            // Update tab buttons
+            const tabs = document.querySelectorAll('.tab');
+            tabs.forEach(tab => tab.classList.remove('active'));
+            event.target.classList.add('active');
+
+            // Update tab content
+            const contents = document.querySelectorAll('.tab-content');
+            contents.forEach(content => content.classList.remove('active'));
+            document.getElementById(tabName + '-tab').classList.add('active');
+        }
+
+        function analyzeThroughput() {
+            const input = document.getElementById('iperf-input').value;
+            const resultsDiv = document.getElementById('throughput-results');
+            
+            if (!input.trim()) {
+                resultsDiv.innerHTML = '<div class="error">Please paste iperf3 output data.</div>';
+                resultsDiv.classList.add('show');
+                return;
+            }
+
+            try {
+                const lines = input.split('\n');
+                const throughputs = [];
+                const intervalData = [];
+
+                const bitRateRegex = /\[\s*\d+\]\s+([\d.]+)-([\d.]+)\s+sec\s+([\d.]+\s+[KMGT]?Bytes)\s+([\d.]+)\s+(Mbits\/sec|Gbits\/sec|Kbits\/sec)/;
+
+                for (const line of lines) {
+                    const match = line.match(bitRateRegex);
+                    if (match) {
+                        let throughput = parseFloat(match[4]);
+                        const unit = match[5];
+                        
+                        if (unit === 'Gbits/sec') {
+                            throughput *= 1000;
+                        } else if (unit === 'Kbits/sec') {
+                            throughput /= 1000;
+                        }
+                        
+                        throughputs.push(throughput);
+                        intervalData.push({
+                            interval: `${match[1]}-${match[2]}`,
+                            throughput: throughput
+                        });
+                    }
+                }
+
+                if (throughputs.length === 0) {
+                    resultsDiv.innerHTML = '<div class="error">No valid throughput data found. Please ensure you pasted valid iperf3 output.</div>';
+                    resultsDiv.classList.add('show');
+                    return;
+                }
+
+                const min = Math.min(...throughputs);
+                const max = Math.max(...throughputs);
+                const sum = throughputs.reduce((a, b) => a + b, 0);
+                const avg = sum / throughputs.length;
+                
+                const variance = throughputs.reduce((acc, val) => acc + Math.pow(val - avg, 2), 0) / throughputs.length;
+                const std = Math.sqrt(variance);
+
+                let tableHTML = '<h3 style="margin-bottom: 15px; color: #333;">Interval Data</h3>';
+                tableHTML += '<table class="data-table"><thead><tr><th>Interval (sec)</th><th>Throughput (Mbits/sec)</th></tr></thead><tbody>';
+                
+                intervalData.forEach(data => {
+                    tableHTML += `<tr><td>${data.interval}</td><td>${data.throughput.toFixed(1)}</td></tr>`;
+                });
+                
+                tableHTML += '</tbody></table>';
+
+                resultsDiv.innerHTML = `
+                    <div class="info">
+                        Analyzed ${throughputs.length} intervals
+                    </div>
+                    
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-label">Minimum</div>
+                            <div class="stat-value">${min.toFixed(1)}<span class="stat-unit">Mbps</span></div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Maximum</div>
+                            <div class="stat-value">${max.toFixed(1)}<span class="stat-unit">Mbps</span></div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Average</div>
+                            <div class="stat-value">${avg.toFixed(1)}<span class="stat-unit">Mbps</span></div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Std Dev</div>
+                            <div class="stat-value">${std.toFixed(1)}<span class="stat-unit">Mbps</span></div>
+                        </div>
+                    </div>
+                    
+                    ${tableHTML}
+                `;
+                
+                resultsDiv.classList.add('show');
+
+            } catch (error) {
+                resultsDiv.innerHTML = `<div class="error">Error analyzing data: ${error.message}</div>`;
+                resultsDiv.classList.add('show');
+            }
+        }
+
+        function analyzeLatency() {
+            const input = document.getElementById('ping-input').value;
+            const resultsDiv = document.getElementById('latency-results');
+            
+            if (!input.trim()) {
+                resultsDiv.innerHTML = '<div class="error">Please paste ping output data.</div>';
+                resultsDiv.classList.add('show');
+                return;
+            }
+
+            try {
+                const lines = input.split('\n');
+                const latencies = [];
+                const latencyData = [];
+
+                const pingRegex = /icmp_seq=(\d+).*time=([\d.]+)\s*ms/;
+
+                for (const line of lines) {
+                    const match = line.match(pingRegex);
+                    if (match) {
+                        const seq = parseInt(match[1]);
+                        const latency = parseFloat(match[2]);
+                        
+                        latencies.push(latency);
+                        latencyData.push({
+                            seq: seq,
+                            latency: latency
+                        });
+                    }
+                }
+
+                if (latencies.length === 0) {
+                    resultsDiv.innerHTML = '<div class="error">No valid latency data found. Please ensure you pasted valid ping output.</div>';
+                    resultsDiv.classList.add('show');
+                    return;
+                }
+
+                const min = Math.min(...latencies);
+                const max = Math.max(...latencies);
+                const sum = latencies.reduce((a, b) => a + b, 0);
+                const avg = sum / latencies.length;
+                
+                const variance = latencies.reduce((acc, val) => acc + Math.pow(val - avg, 2), 0) / latencies.length;
+                const std = Math.sqrt(variance);
+
+                let tableHTML = '<h3 style="margin-bottom: 15px; color: #333;">Ping Data</h3>';
+                tableHTML += '<table class="data-table"><thead><tr><th>Sequence</th><th>Latency (ms)</th></tr></thead><tbody>';
+                
+                latencyData.forEach(data => {
+                    tableHTML += `<tr><td>${data.seq}</td><td>${data.latency.toFixed(1)}</td></tr>`;
+                });
+                
+                tableHTML += '</tbody></table>';
+
+                resultsDiv.innerHTML = `
+                    <div class="info">
+                        Analyzed ${latencies.length} ping responses
+                    </div>
+                    
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-label">Minimum</div>
+                            <div class="stat-value">${min.toFixed(1)}<span class="stat-unit">ms</span></div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Maximum</div>
+                            <div class="stat-value">${max.toFixed(1)}<span class="stat-unit">ms</span></div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Average</div>
+                            <div class="stat-value">${avg.toFixed(1)}<span class="stat-unit">ms</span></div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Std Dev</div>
+                            <div class="stat-value">${std.toFixed(1)}<span class="stat-unit">ms</span></div>
+                        </div>
+                    </div>
+                    
+                    ${tableHTML}
+                `;
+                
+                resultsDiv.classList.add('show');
+
+            } catch (error) {
+                resultsDiv.innerHTML = `<div class="error">Error analyzing data: ${error.message}</div>`;
+                resultsDiv.classList.add('show');
+            }
+        }
+    </script>
+</body>
+</html>
