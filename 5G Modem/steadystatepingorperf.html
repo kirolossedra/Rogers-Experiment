@@ -150,9 +150,21 @@
 
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 15px;
             margin-bottom: 30px;
+        }
+
+        @media (max-width: 1024px) {
+            .stats-grid {
+                grid-template-columns: repeat(3, 1fr);
+            }
+        }
+
+        @media (max-width: 768px) {
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
         }
 
         .stat-card {
@@ -237,6 +249,32 @@
             margin-bottom: 20px;
             font-size: 14px;
         }
+
+        .warning {
+            background: #fff3e0;
+            color: #e65100;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #e65100;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+
+        .two-column-input {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .two-column-input .input-section {
+            margin-bottom: 0;
+        }
+
+        @media (max-width: 768px) {
+            .two-column-input {
+                grid-template-columns: 1fr;
+            }
+        }
     </style>
 </head>
 <body>
@@ -250,6 +288,7 @@
             <div class="tabs">
                 <button class="tab active" onclick="switchTab('throughput')">Throughput (iperf3)</button>
                 <button class="tab" onclick="switchTab('latency')">Latency (ping)</button>
+                <button class="tab" onclick="switchTab('synced')">Synced Analysis</button>
             </div>
 
             <div id="throughput-tab" class="tab-content active">
@@ -277,17 +316,35 @@
 
                 <div id="latency-results" class="results"></div>
             </div>
+
+            <div id="synced-tab" class="tab-content">
+                <div class="two-column-input">
+                    <div class="input-section">
+                        <label for="synced-iperf-input">Paste iperf3 Output:</label>
+                        <textarea id="synced-iperf-input" placeholder="Paste your iperf3 output here..."></textarea>
+                    </div>
+
+                    <div class="input-section">
+                        <label for="synced-ping-input">Paste Ping Output (with Unix timestamps):</label>
+                        <textarea id="synced-ping-input" placeholder="Paste your ping output here..."></textarea>
+                    </div>
+                </div>
+
+                <div class="button-container">
+                    <button onclick="analyzeSynced()">Analyze Synced Data</button>
+                </div>
+
+                <div id="synced-results" class="results"></div>
+            </div>
         </div>
     </div>
 
     <script>
         function switchTab(tabName) {
-            // Update tab buttons
             const tabs = document.querySelectorAll('.tab');
             tabs.forEach(tab => tab.classList.remove('active'));
             event.target.classList.add('active');
 
-            // Update tab content
             const contents = document.querySelectorAll('.tab-content');
             contents.forEach(content => content.classList.remove('active'));
             document.getElementById(tabName + '-tab').classList.add('active');
@@ -473,6 +530,189 @@
 
             } catch (error) {
                 resultsDiv.innerHTML = `<div class="error">Error analyzing data: ${error.message}</div>`;
+                resultsDiv.classList.add('show');
+            }
+        }
+
+        function analyzeSynced() {
+            const iperfInput = document.getElementById('synced-iperf-input').value;
+            const pingInput = document.getElementById('synced-ping-input').value;
+            const resultsDiv = document.getElementById('synced-results');
+            
+            if (!iperfInput.trim() || !pingInput.trim()) {
+                resultsDiv.innerHTML = '<div class="error">Please paste both iperf3 and ping output data.</div>';
+                resultsDiv.classList.add('show');
+                return;
+            }
+
+            try {
+                // Parse iperf3 data to get time range
+                const iperfLines = iperfInput.split('\n');
+                const iperfIntervals = [];
+                
+                const bitRateRegex = /\[\s*\d+\]\s+([\d.]+)-([\d.]+)\s+sec/;
+                
+                for (const line of iperfLines) {
+                    const match = line.match(bitRateRegex);
+                    if (match) {
+                        const startTime = parseFloat(match[1]);
+                        const endTime = parseFloat(match[2]);
+                        iperfIntervals.push({ start: startTime, end: endTime });
+                    }
+                }
+
+                if (iperfIntervals.length === 0) {
+                    resultsDiv.innerHTML = '<div class="error">No valid iperf3 intervals found.</div>';
+                    resultsDiv.classList.add('show');
+                    return;
+                }
+
+                const iperfStartTime = Math.min(...iperfIntervals.map(i => i.start));
+                const iperfEndTime = Math.max(...iperfIntervals.map(i => i.end));
+
+                // Parse ping data with Unix timestamps
+                const pingLines = pingInput.split('\n');
+                const pingData = [];
+                
+                const pingRegexUnix = /\[(\d+\.\d+)\].*icmp_seq=(\d+).*time=([\d.]+)\s*ms/;
+                
+                let firstPingTimestamp = null;
+                
+                for (const line of pingLines) {
+                    const match = line.match(pingRegexUnix);
+                    if (match) {
+                        const unixTimestamp = parseFloat(match[1]);
+                        const seq = parseInt(match[2]);
+                        const latency = parseFloat(match[3]);
+                        
+                        if (firstPingTimestamp === null) {
+                            firstPingTimestamp = unixTimestamp;
+                        }
+                        
+                        const relativeTime = unixTimestamp - firstPingTimestamp;
+                        
+                        pingData.push({
+                            unixTimestamp: unixTimestamp,
+                            relativeTime: relativeTime,
+                            seq: seq,
+                            latency: latency
+                        });
+                    }
+                }
+
+                if (pingData.length === 0) {
+                    resultsDiv.innerHTML = '<div class="error">No valid ping data with Unix timestamps found. Expected format: [1234567890.123] ... icmp_seq=1 ... time=12.3 ms</div>';
+                    resultsDiv.classList.add('show');
+                    return;
+                }
+
+                // Convert Unix timestamps to EST
+                const formatEST = (unixTimestamp) => {
+                    const date = new Date(unixTimestamp * 1000);
+                    return date.toLocaleString('en-US', { 
+                        timeZone: 'America/New_York',
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit',
+                        hour12: false
+                    });
+                };
+
+                const pingStartTimeEST = formatEST(pingData[0].unixTimestamp);
+                const pingEndTimeEST = formatEST(pingData[pingData.length - 1].unixTimestamp);
+
+                // Filter ping data to match iperf3 time range
+                const syncedPingData = pingData.filter(p => 
+                    p.relativeTime >= iperfStartTime && p.relativeTime <= iperfEndTime
+                );
+
+                if (syncedPingData.length === 0) {
+                    resultsDiv.innerHTML = `
+                        <div class="error">No ping data intersects with iperf3 time range.</div>
+                        <div class="info">
+                            <strong>iperf3 Time Range:</strong> ${iperfStartTime.toFixed(1)}s - ${iperfEndTime.toFixed(1)}s (relative)<br>
+                            <strong>Ping Time Range (EST):</strong> ${pingStartTimeEST} to ${pingEndTimeEST}<br>
+                            <strong>Ping Relative Time Range:</strong> ${pingData[0].relativeTime.toFixed(1)}s - ${pingData[pingData.length - 1].relativeTime.toFixed(1)}s
+                        </div>
+                    `;
+                    resultsDiv.classList.add('show');
+                    return;
+                }
+
+                // Calculate statistics for synced ping data
+                const latencies = syncedPingData.map(p => p.latency);
+                const min = Math.min(...latencies);
+                const max = Math.max(...latencies);
+                const sum = latencies.reduce((a, b) => a + b, 0);
+                const avg = sum / latencies.length;
+                
+                const variance = latencies.reduce((acc, val) => acc + Math.pow(val - avg, 2), 0) / latencies.length;
+                const std = Math.sqrt(variance);
+
+                // Calculate average jitter (average of absolute differences between consecutive latencies)
+                let jitterSum = 0;
+                for (let i = 1; i < latencies.length; i++) {
+                    jitterSum += Math.abs(latencies[i] - latencies[i - 1]);
+                }
+                const avgJitter = latencies.length > 1 ? jitterSum / (latencies.length - 1) : 0;
+
+                // Create table
+                let tableHTML = '<h3 style="margin-bottom: 15px; color: #333;">Synced Ping Data (Intersecting with iperf3)</h3>';
+                tableHTML += '<table class="data-table"><thead><tr><th>Timestamp (EST)</th><th>Relative Time (sec)</th><th>Sequence</th><th>Latency (ms)</th></tr></thead><tbody>';
+                
+                syncedPingData.forEach(data => {
+                    tableHTML += `<tr>
+                        <td>${formatEST(data.unixTimestamp)}</td>
+                        <td>${data.relativeTime.toFixed(1)}</td>
+                        <td>${data.seq}</td>
+                        <td>${data.latency.toFixed(1)}</td>
+                    </tr>`;
+                });
+                
+                tableHTML += '</tbody></table>';
+
+                resultsDiv.innerHTML = `
+                    <div class="info">
+                        <strong>Ping Data Time Range (EST):</strong><br>
+                        Start: ${pingStartTimeEST}<br>
+                        End: ${pingEndTimeEST}<br><br>
+                        <strong>iperf3 Time Range:</strong> ${iperfStartTime.toFixed(1)}s - ${iperfEndTime.toFixed(1)}s<br>
+                        <strong>Synced Ping Packets:</strong> ${syncedPingData.length} out of ${pingData.length} total
+                    </div>
+                    
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-label">Minimum</div>
+                            <div class="stat-value">${min.toFixed(1)}<span class="stat-unit">ms</span></div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Maximum</div>
+                            <div class="stat-value">${max.toFixed(1)}<span class="stat-unit">ms</span></div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Average</div>
+                            <div class="stat-value">${avg.toFixed(1)}<span class="stat-unit">ms</span></div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Std Dev</div>
+                            <div class="stat-value">${std.toFixed(1)}<span class="stat-unit">ms</span></div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Avg Jitter</div>
+                            <div class="stat-value">${avgJitter.toFixed(2)}<span class="stat-unit">ms</span></div>
+                        </div>
+                    </div>
+                    
+                    ${tableHTML}
+                `;
+                
+                resultsDiv.classList.add('show');
+
+            } catch (error) {
+                resultsDiv.innerHTML = `<div class="error">Error analyzing synced data: ${error.message}</div>`;
                 resultsDiv.classList.add('show');
             }
         }
