@@ -39,6 +39,8 @@
         .legend { display:flex; gap:10px; align-items:center; margin-left:10px; }
         .legend span { display:inline-flex; width:16px; height:12px; border-radius:3px; margin-right:6px; }
         pre.segments { background: #fff; padding: 10px; border-radius: 8px; max-height: 220px; overflow: auto; font-size: 13px; }
+        .stats-output { background: #fff; padding: 12px; border-radius: 8px; margin-top: 12px; }
+        .stats-output pre { white-space: pre-wrap; font-size: 13px; }
     </style>
 </head>
 <body>
@@ -109,7 +111,7 @@
             let s = document.getElementById('status');
             s.textContent = msg;
             s.className = `status show ${type}`;
-            setTimeout(() => s.style.display = 'none', 3000);
+            setTimeout(() => s.style.display = 'none', 4000);
         }
 
         function smooth(data, w) {
@@ -155,6 +157,24 @@
             chart.options.scales.y.grid.display = false;
             chart.options.scales.y1.grid.display = false;
             chart.update();
+        }
+
+        function computeStats(values) {
+            // values is array of numbers (no nulls)
+            if (!values || !values.length) return null;
+            let n = values.length;
+            let sum = values.reduce((a,b) => a+b, 0);
+            let mean = sum / n;
+            let min = Math.min(...values);
+            let max = Math.max(...values);
+            // population std deviation
+            let variance = values.map(v => (v - mean) ** 2).reduce((a,b) => a+b, 0) / n;
+            let std = Math.sqrt(variance);
+            // avg jitter: average absolute difference between consecutive valid samples
+            let diffs = [];
+            for (let i = 1; i < values.length; i++) diffs.push(Math.abs(values[i] - values[i-1]));
+            let avgJitter = diffs.length ? diffs.reduce((a,b) => a+b, 0) / diffs.length : 0;
+            return {min, max, mean, std, avgJitter, count: n};
         }
 
         async function analyze() {
@@ -268,7 +288,8 @@
                 let perf = [], timestamps = [], start = null, end = null;
                 
                 for (let l of testLines) {
-                    let m = l.match(/^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})/);
+                    // Accept common timestamp formats for ping logs
+                    let m = l.match(/^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})/) || l.match(/^(\w{3}\s+\w{3}\s+\d+\s+\d{2}:\d{2}:\d{2}\s+\d{4})/);
                     if (m) {
                         let t = new Date(m[1]).getTime() / 1000;
                         if (!start) start = t;
@@ -283,7 +304,8 @@
                         
                         let lat = l.match(/time=(\d+\.?\d*)\s*ms/);
                         if (lat) {
-                            perf.push(parseFloat(lat[1]));
+                            let val = parseFloat(lat[1]);
+                            perf.push(isNaN(val) ? null : val);
                             timestamps.push(t);
                             end = t;
                         }
@@ -294,6 +316,24 @@
                 
                 let duration = end - start;
                 console.log(`Latency ${file.name}: ${perf.length} points, ${duration.toFixed(2)}s duration`);
+                
+                // Handle spikes > 500ms: replace them with previous value if exists, else next valid value.
+                // This "marks it to be the previous or the next latency" to remove extreme outliers.
+                for (let idx = 0; idx < perf.length; idx++) {
+                    if (perf[idx] != null && perf[idx] > 500) {
+                        // try previous
+                        if (idx > 0 && perf[idx-1] != null) {
+                            perf[idx] = perf[idx-1];
+                        } else {
+                            // find next non-null
+                            let found = null;
+                            for (let j = idx+1; j < perf.length; j++) {
+                                if (perf[j] != null && perf[j] <= 500) { found = perf[j]; break; }
+                            }
+                            perf[idx] = found !== null ? found : null;
+                        }
+                    }
+                }
                 
                 // Trim/pad latency to match throughput length
                 let targetLen = throughputRun.perf.length;
@@ -317,7 +357,7 @@
                     alignedLength: targetLen
                 });
                 
-                allLatencyRuns.push({perf});
+                allLatencyRuns.push({perf, fileName: file.name});
             }
             
             // Create debug table
@@ -422,14 +462,15 @@
             
             // Create throughput chart (RX SNR + throughput)
             createChart(`Throughput (${allThroughputRuns.length} runs)`, labels, rxMean, rxStd, throughputMean, throughputStd, 'iperf3', null);
-            // Create latency chart, pass per-run latency arrays so we can compute colored segments
+            // Create latency chart, pass per-run latency arrays so we can compute colored segments and stats
             const latencyPerRuns = allLatencyRuns.map(r => r.perf);
-            createChart(`Latency (${allLatencyRuns.length} runs)`, labels, rxMean, rxStd, latencyMean, latencyStd, 'ping', latencyPerRuns);
+            const latencyFilesNames = allLatencyRuns.map(r => r.fileName);
+            createChart(`Latency (${allLatencyRuns.length} runs)`, labels, rxMean, rxStd, latencyMean, latencyStd, 'ping', latencyPerRuns, latencyFilesNames);
             
             status('Analysis complete!', 'success');
         }
 
-        function createChart(name, labels, rxMean, rxStd, perfMean, perfStd, type, perRunData) {
+        function createChart(name, labels, rxMean, rxStd, perfMean, perfStd, type, perRunData, perRunNames) {
             let wrapper = document.createElement('div');
             wrapper.className = 'chart-wrapper';
             
@@ -453,7 +494,7 @@
                 <div style="display:flex;align-items:center;gap:8px;">
                     <span style="background:#4caf50;"></span> Green &nbsp;
                     <span style="background:#ffc107;"></span> Yellow &nbsp;
-                    <span style="background:#f44336;"></span> Red &nbsp;
+                    <span style="background:#ff8a65;"></span> Orange &nbsp;
                     <span style="background:#bdbdbd;"></span> No data
                 </div>
             `;
@@ -475,44 +516,54 @@
             summaryDiv.className = 'summary';
             wrapper.appendChild(summaryDiv);
 
+            // stats output container
+            let statsDiv = document.createElement('div');
+            statsDiv.className = 'stats-output';
+            wrapper.appendChild(statsDiv);
+
             document.getElementById('charts').appendChild(wrapper);
             
             // Create std bands
-            let rxUpper = rxMean.map((m, i) => m != null ? m + rxStd[i] : null);
-            let rxLower = rxMean.map((m, i) => m != null ? m - rxStd[i] : null);
-            let perfUpper = perfMean.map((m, i) => m != null ? m + perfStd[i] : null);
-            let perfLower = perfMean.map((m, i) => m != null ? m - perfStd[i] : null);
+            let rxUpper = rxMean.map((m, i) => (m != null && rxStd[i] != null) ? m + rxStd[i] : null);
+            let rxLower = rxMean.map((m, i) => (m != null && rxStd[i] != null) ? m - rxStd[i] : null);
+            let perfUpper = perfMean.map((m, i) => (m != null && perfStd[i] != null) ? m + perfStd[i] : null);
+            let perfLower = perfMean.map((m, i) => (m != null && perfStd[i] != null) ? m - perfStd[i] : null);
             
             // Datasets: RX SNR band/mean/lower and performance band/mean/lower
             const datasets = [
-                // RX +σ
-                { label: 'RX SNR +σ', data: rxUpper, borderColor: 'rgba(240,147,251,0.25)', backgroundColor: 'rgba(240,147,251,0.08)', fill: '+1', tension: 0.4, borderWidth: 1, pointRadius: 0, yAxisID: 'y' },
+                // RX +σ (we will fill to RX mean)
+                { label: 'RX SNR +σ', data: rxUpper, borderColor: 'rgba(240,147,251,0.25)', backgroundColor: 'rgba(240,147,251,0.08)', fill: '-1', tension: 0.4, borderWidth: 1, pointRadius: 0, yAxisID: 'y' },
                 { label: 'RX SNR Mean', data: rxMean, borderColor: '#f093fb', backgroundColor: 'rgba(240,147,251,0.12)', tension: 0.4, borderWidth: 3, pointRadius: 0, yAxisID: 'y', fill: false },
-                { label: 'RX SNR -σ', data: rxLower, borderColor: 'rgba(240,147,251,0.25)', backgroundColor: 'rgba(240,147,251,0.08)', fill: '-1', tension: 0.4, borderWidth: 1, pointRadius: 0, yAxisID: 'y' },
+                { label: 'RX SNR -σ', data: rxLower, borderColor: 'rgba(240,147,251,0.25)', backgroundColor: 'rgba(240,147,251,0.08)', fill: false, tension: 0.4, borderWidth: 1, pointRadius: 0, yAxisID: 'y' },
 
                 // Performance +σ
-                { label: (type === 'iperf3' ? 'Throughput' : 'Latency') + ' +σ', data: perfUpper, borderColor: 'rgba(255,107,107,0.25)', backgroundColor: 'rgba(255,107,107,0.08)', fill: '+1', tension: 0.4, borderWidth: 1, pointRadius: 0, yAxisID: 'y1' },
+                { label: (type === 'iperf3' ? 'Throughput' : 'Latency') + ' +σ', data: perfUpper, borderColor: 'rgba(255,107,107,0.25)', backgroundColor: 'rgba(255,107,107,0.08)', fill: '-1', tension: 0.4, borderWidth: 1, pointRadius: 0, yAxisID: 'y1' },
                 { label: (type === 'iperf3' ? 'Throughput' : 'Latency') + ' Mean', data: perfMean, borderColor: '#ff6b6b', backgroundColor: 'rgba(255,107,107,0.12)', tension: 0.4, borderWidth: 3, pointRadius: 0, yAxisID: 'y1', fill: false },
-                { label: (type === 'iperf3' ? 'Throughput' : 'Latency') + ' -σ', data: perfLower, borderColor: 'rgba(255,107,107,0.25)', backgroundColor: 'rgba(255,107,107,0.08)', fill: '-1', tension: 0.4, borderWidth: 1, pointRadius: 0, yAxisID: 'y1' }
+                { label: (type === 'iperf3' ? 'Throughput' : 'Latency') + ' -σ', data: perfLower, borderColor: 'rgba(255,107,107,0.25)', backgroundColor: 'rgba(255,107,107,0.08)', fill: false, tension: 0.4, borderWidth: 1, pointRadius: 0, yAxisID: 'y1' },
             ];
             
             // Build status segments for latency (perRunData)
             let segmentColors = null;
             let segmentCategories = null;
+            let longestBlocks = null;
+            let statsReportText = '';
             if (type === 'ping' && Array.isArray(perRunData)) {
                 const maxLen = labels.length;
                 segmentColors = new Array(maxLen);
                 segmentCategories = new Array(maxLen);
+                // thresholds
+                const T_GREEN = 50;   // under 40ms -> green
+                const T_YELLOW = 75;  // 40-75 -> yellow, >75 -> orange
                 for (let i = 0; i < maxLen; i++) {
                     let vals = perRunData.map(r => r[i]).filter(v => v != null);
                     if (!vals.length) {
-                        segmentCategories[i] = 'No data';
+                        segmentCategories[i] = 'NO_DATA';
                         segmentColors[i] = 'rgba(189,189,189,0.06)';
-                    } else if (vals.some(v => v > 75)) {
-                        segmentCategories[i] = 'RED (>75ms in at least one run)';
-                        segmentColors[i] = 'rgba(244,67,54,0.12)'; // red
-                    } else if (vals.some(v => v > 50)) {
-                        segmentCategories[i] = 'YELLOW (>40ms in at least one run)';
+                    } else if (vals.some(v => v > T_YELLOW)) {
+                        segmentCategories[i] = 'ORANGE (>75ms in at least one run)';
+                        segmentColors[i] = 'rgba(255,138,101,0.12)'; // orange
+                    } else if (vals.some(v => v >= T_GREEN)) {
+                        segmentCategories[i] = 'YELLOW (>=40ms in at least one run)';
                         segmentColors[i] = 'rgba(255,193,7,0.12)'; // yellow
                     } else {
                         segmentCategories[i] = 'GREEN (all runs <40ms)';
@@ -520,28 +571,83 @@
                     }
                 }
 
-                // Compute contiguous ranges for summary (these ranges may be non-contiguous categories grouped consecutively)
+                // Compute contiguous ranges for summary (group consecutive indices with same category)
                 const ranges = [];
                 let curCat = segmentCategories[0];
                 let start = 0;
                 for (let i = 1; i <= segmentCategories.length; i++) {
                     if (i === segmentCategories.length || segmentCategories[i] !== curCat) {
-                        ranges.push({from: start, to: i - 1, category: curCat});
+                        ranges.push({from: start, to: i - 1, category: curCat, len: i - start});
                         start = i;
                         curCat = segmentCategories[i];
                     }
                 }
 
+                // Find greatest contiguous block for GREEN, YELLOW, ORANGE (ignore NO_DATA)
+                const wantedCats = {
+                    'GREEN (all runs <40ms)': 'GREEN',
+                    'YELLOW (>=40ms in at least one run)': 'YELLOW',
+                    'ORANGE (>75ms in at least one run)': 'ORANGE'
+                };
+                longestBlocks = {GREEN: null, YELLOW: null, ORANGE: null};
+                for (let catKey in wantedCats) {
+                    let simple = wantedCats[catKey];
+                    let filtered = ranges.filter(r => r.category === catKey);
+                    if (filtered.length) {
+                        // pick the longest
+                        filtered.sort((a,b) => b.len - a.len);
+                        let best = filtered[0];
+                        longestBlocks[simple] = {from: best.from, to: best.to, len: best.len};
+                    } else {
+                        longestBlocks[wantedCats[catKey]] = null;
+                    }
+                }
+
                 // Build summary text
-                let summaryHtml = `<div style="margin-top:8px;"><strong>Latency segment summary:</strong></div>`;
+                let summaryHtml = `<div style="margin-top:8px;"><strong>Latency segment summary (contiguous ranges):</strong></div>`;
                 summaryHtml += `<pre class="segments">`;
                 ranges.forEach(r => {
-                    summaryHtml += `From ${r.from}s to ${r.to}s: ${r.category}\n`;
+                    summaryHtml += `From ${r.from}s to ${r.to}s (${r.len}s): ${r.category}\n`;
                 });
                 summaryHtml += `</pre>`;
                 summaryDiv.innerHTML = summaryHtml;
+
+                // For each longest block, compute stats per file (perRunData)
+                statsReportText += ''; // we'll add lines below
+                const catsOrder = ['GREEN', 'YELLOW', 'ORANGE'];
+                catsOrder.forEach(cat => {
+                    let block = longestBlocks[cat];
+                    if (!block) {
+                        statsReportText += `OK for ${cat.toLowerCase()} area: No contiguous block found.\n\n`;
+                        return;
+                    }
+                    statsReportText += `OK for ${cat.toLowerCase()} area (largest contiguous block: ${block.from}s to ${block.to}s, length ${block.len}s):\n`;
+                    // for each file
+                    for (let f = 0; f < perRunData.length; f++) {
+                        let arr = perRunData[f].slice(block.from, block.to + 1).filter(v => v != null);
+                        let stats = computeStats(arr);
+                        let fileName = (perRunNames && perRunNames[f]) ? perRunNames[f] : `file ${f+1}`;
+                        if (!stats) {
+                            statsReportText += `  for ${fileName} it is: No data in this block\n`;
+                        } else {
+                            statsReportText += `  for ${fileName} it is: min=${stats.min.toFixed(3)}, max=${stats.max.toFixed(3)}, avg=${stats.mean.toFixed(3)}, avg_jitter=${stats.avgJitter.toFixed(3)}, std=${stats.std.toFixed(3)}\n`;
+                        }
+                    }
+                    statsReportText += `\n`;
+                });
+
+                // Also provide a concise listing of the longest block per category
+                let blocksSummary = `Largest contiguous blocks per category:\n`;
+                ['GREEN','YELLOW','ORANGE'].forEach(k => {
+                    let b = longestBlocks[k];
+                    if (b) blocksSummary += `${k}: from ${b.from}s to ${b.to}s (len ${b.len}s)\n`;
+                    else blocksSummary += `${k}: none\n`;
+                });
+                statsReportText = blocksSummary + '\n' + statsReportText;
+                statsDiv.innerHTML = `<pre>${statsReportText}</pre>`;
             } else {
                 summaryDiv.innerHTML = '';
+                statsDiv.innerHTML = '';
             }
             
             const chart = new Chart(canvas, {
@@ -584,12 +690,12 @@
                 let sPerfMean = smooth(chartInstances[idx].rawPerfMean, w);
                 let sPerfStd = smooth(chartInstances[idx].rawPerfStd, w);
                 
-                chart.data.datasets[0].data = sRxMean.map((m, i) => m != null ? m + sRxStd[i] : null);
+                chart.data.datasets[0].data = sRxMean.map((m, i) => m != null && sRxStd[i] != null ? m + sRxStd[i] : null);
                 chart.data.datasets[1].data = sRxMean;
-                chart.data.datasets[2].data = sRxMean.map((m, i) => m != null ? m - sRxStd[i] : null);
-                chart.data.datasets[3].data = sPerfMean.map((m, i) => m != null ? m + sPerfStd[i] : null);
+                chart.data.datasets[2].data = sRxMean.map((m, i) => m != null && sRxStd[i] != null ? m - sRxStd[i] : null);
+                chart.data.datasets[3].data = sPerfMean.map((m, i) => m != null && sPerfStd[i] != null ? m + sPerfStd[i] : null);
                 chart.data.datasets[4].data = sPerfMean;
-                chart.data.datasets[5].data = sPerfMean.map((m, i) => m != null ? m - sPerfStd[i] : null);
+                chart.data.datasets[5].data = sPerfMean.map((m, i) => m != null && sPerfStd[i] != null ? m - sPerfStd[i] : null);
                 
                 chart.update();
             };
