@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WiFi Performance Analyzer</title>
+    <title>WiFi Performance Analyzer (RX SNR only)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -43,7 +43,7 @@
 </head>
 <body>
     <div class="container">
-        <h1>📡 WiFi Performance Analyzer</h1>
+        <h1>📡 WiFi Performance Analyzer (RX SNR only)</h1>
         
         <div class="upload">
             <label>MAC Address:</label>
@@ -76,7 +76,6 @@
         const segmentBackground = {
             id: 'segmentBackground',
             beforeDraw: (chart, args, options) => {
-                // options: { enabled: true, segments: [...colors], alpha: 0.08 }
                 if (!options || !options.enabled || !options.segments) return;
                 const ctx = chart.ctx;
                 const xScale = chart.scales.x;
@@ -87,10 +86,8 @@
                 for (let i = 0; i < segments.length; i++) {
                     const color = segments[i];
                     if (!color) continue;
-                    // compute left & right pixel for each index (assuming labels are numeric indices)
                     const left = xScale.getPixelForValue(i - 0.5);
                     const right = xScale.getPixelForValue(i + 0.5);
-                    // clip drawing area
                     const drawLeft = Math.max(left, chart.chartArea.left);
                     const drawRight = Math.min(right, chart.chartArea.right);
                     if (drawRight <= drawLeft) continue;
@@ -171,7 +168,7 @@
                 return;
             }
             
-            // Parse WiFi log
+            // Parse WiFi log - only RX SNR is collected
             let lines = logText.split('\n');
             let wifiData = [];
             let ts = null, noise = null;
@@ -187,12 +184,11 @@
                     let parts = line.split(/\s+/);
                     let idx = parts.findIndex(p => p.toLowerCase() === mac);
                     if (idx >= 0 && parts.length > idx + 16) {
-                        let ack = parseInt(parts[idx + 15]);
+                        // original code had ack at idx+15 and rx at idx+16; we only use rx
                         let rx = parseInt(parts[idx + 16]);
-                        if (!isNaN(ack) && !isNaN(rx) && ts) {
+                        if (!isNaN(rx) && ts) {
                             wifiData.push({
                                 ts: new Date(ts).getTime() / 1000,
-                                ack: ack,
                                 rx: rx,
                                 noise: noise
                             });
@@ -206,11 +202,12 @@
                 return;
             }
             
-            // Process throughput files - aggregate all runs, STRICT 100s limit
+            // Reset UI areas
             document.getElementById('charts').innerHTML = '';
             document.getElementById('debugTable').innerHTML = '';
             chartInstances = [];
             
+            // Process throughput files - aggregate all runs, STRICT 100s limit
             let allThroughputRuns = [];
             let debugInfo = [];
             
@@ -250,10 +247,9 @@
                 let filtered = wifiData.filter(d => d.ts >= start && d.ts <= end);
                 if (!filtered.length) continue;
                 
-                let ack = filtered.map(d => d.ack);
                 let rx = filtered.map(d => d.rx);
                 
-                allThroughputRuns.push({ack, rx, perf, start, end, fileName: file.name, duration});
+                allThroughputRuns.push({rx, perf, start, end, fileName: file.name, duration});
             }
             
             if (!allThroughputRuns.length) {
@@ -369,8 +365,8 @@
                 document.getElementById('debugTable').innerHTML = tableHTML;
             }
             
-            // Find max length and pad arrays for throughput
-            let maxLen = Math.max(...allThroughputRuns.map(r => Math.max(r.ack.length, r.rx.length, r.perf.length)));
+            // Find max length and pad arrays for throughput (use RX & perf lengths)
+            let maxLen = Math.max(...allThroughputRuns.map(r => Math.max(r.rx.length, r.perf.length)));
             
             // FORCE maxLen to represent max 100 seconds
             // Calculate samples per second and cap at 100s worth
@@ -385,12 +381,10 @@
             
             allThroughputRuns.forEach(r => {
                 // Trim if exceeds maxLen
-                if (r.ack.length > maxLen) r.ack = r.ack.slice(0, maxLen);
                 if (r.rx.length > maxLen) r.rx = r.rx.slice(0, maxLen);
                 if (r.perf.length > maxLen) r.perf = r.perf.slice(0, maxLen);
                 
                 // Pad to maxLen
-                while(r.ack.length < maxLen) r.ack.push(null);
                 while(r.rx.length < maxLen) r.rx.push(null);
                 while(r.perf.length < maxLen) r.perf.push(null);
             });
@@ -401,20 +395,17 @@
                 while(r.perf.length < maxLen) r.perf.push(null);
             });
             
-            // Calculate mean and std for throughput
+            // Calculate mean and std for RX SNR and throughput
             let labels = Array.from({length: maxLen}, (_, i) => i);
-            let ackMean = [], ackStd = [], rxMean = [], rxStd = [], throughputMean = [], throughputStd = [];
+            let rxMean = [], rxStd = [], throughputMean = [], throughputStd = [];
             
             for (let i = 0; i < maxLen; i++) {
-                let ackVals = allThroughputRuns.map(r => r.ack[i]).filter(v => v != null);
                 let rxVals = allThroughputRuns.map(r => r.rx[i]).filter(v => v != null);
                 let throughputVals = allThroughputRuns.map(r => r.perf[i]).filter(v => v != null);
                 
-                ackMean[i] = ackVals.length ? ackVals.reduce((a,b) => a+b) / ackVals.length : null;
                 rxMean[i] = rxVals.length ? rxVals.reduce((a,b) => a+b) / rxVals.length : null;
                 throughputMean[i] = throughputVals.length ? throughputVals.reduce((a,b) => a+b) / throughputVals.length : null;
                 
-                ackStd[i] = ackVals.length > 1 ? Math.sqrt(ackVals.map(v => (v - ackMean[i])**2).reduce((a,b) => a+b) / ackVals.length) : 0;
                 rxStd[i] = rxVals.length > 1 ? Math.sqrt(rxVals.map(v => (v - rxMean[i])**2).reduce((a,b) => a+b) / rxVals.length) : 0;
                 throughputStd[i] = throughputVals.length > 1 ? Math.sqrt(throughputVals.map(v => (v - throughputMean[i])**2).reduce((a,b) => a+b) / throughputVals.length) : 0;
             }
@@ -429,16 +420,16 @@
                 latencyStd[i] = latencyVals.length > 1 ? Math.sqrt(latencyVals.map(v => (v - latencyMean[i])**2).reduce((a,b) => a+b) / latencyVals.length) : 0;
             }
             
-            // Create throughput chart (no per-runNeeded)
-            createChart(`Throughput (${allThroughputRuns.length} runs)`, labels, ackMean, ackStd, rxMean, rxStd, throughputMean, throughputStd, 'iperf3', null);
+            // Create throughput chart (RX SNR + throughput)
+            createChart(`Throughput (${allThroughputRuns.length} runs)`, labels, rxMean, rxStd, throughputMean, throughputStd, 'iperf3', null);
             // Create latency chart, pass per-run latency arrays so we can compute colored segments
             const latencyPerRuns = allLatencyRuns.map(r => r.perf);
-            createChart(`Latency (${allLatencyRuns.length} runs)`, labels, ackMean, ackStd, rxMean, rxStd, latencyMean, latencyStd, 'ping', latencyPerRuns);
+            createChart(`Latency (${allLatencyRuns.length} runs)`, labels, rxMean, rxStd, latencyMean, latencyStd, 'ping', latencyPerRuns);
             
             status('Analysis complete!', 'success');
         }
 
-        function createChart(name, labels, ackMean, ackStd, rxMean, rxStd, perfMean, perfStd, type, perRunData) {
+        function createChart(name, labels, rxMean, rxStd, perfMean, perfStd, type, perRunData) {
             let wrapper = document.createElement('div');
             wrapper.className = 'chart-wrapper';
             
@@ -487,20 +478,13 @@
             document.getElementById('charts').appendChild(wrapper);
             
             // Create std bands
-            let ackUpper = ackMean.map((m, i) => m != null ? m + ackStd[i] : null);
-            let ackLower = ackMean.map((m, i) => m != null ? m - ackStd[i] : null);
             let rxUpper = rxMean.map((m, i) => m != null ? m + rxStd[i] : null);
             let rxLower = rxMean.map((m, i) => m != null ? m - rxStd[i] : null);
             let perfUpper = perfMean.map((m, i) => m != null ? m + perfStd[i] : null);
             let perfLower = perfMean.map((m, i) => m != null ? m - perfStd[i] : null);
             
-            // Datasets: ack band, ack mean, ack lower, rx band/mean/lower, perf band/mean/lower
+            // Datasets: RX SNR band/mean/lower and performance band/mean/lower
             const datasets = [
-                // ACK +σ
-                { label: 'ACK SNR +σ', data: ackUpper, borderColor: 'rgba(102,126,234,0.25)', backgroundColor: 'rgba(102,126,234,0.08)', fill: '+1', tension: 0.4, borderWidth: 1, pointRadius: 0, yAxisID: 'y' },
-                { label: 'ACK SNR Mean', data: ackMean, borderColor: '#667eea', backgroundColor: 'rgba(102,126,234,0.12)', tension: 0.4, borderWidth: 3, pointRadius: 0, yAxisID: 'y', fill: false },
-                { label: 'ACK SNR -σ', data: ackLower, borderColor: 'rgba(102,126,234,0.25)', backgroundColor: 'rgba(102,126,234,0.08)', fill: '-1', tension: 0.4, borderWidth: 1, pointRadius: 0, yAxisID: 'y' },
-
                 // RX +σ
                 { label: 'RX SNR +σ', data: rxUpper, borderColor: 'rgba(240,147,251,0.25)', backgroundColor: 'rgba(240,147,251,0.08)', fill: '+1', tension: 0.4, borderWidth: 1, pointRadius: 0, yAxisID: 'y' },
                 { label: 'RX SNR Mean', data: rxMean, borderColor: '#f093fb', backgroundColor: 'rgba(240,147,251,0.12)', tension: 0.4, borderWidth: 3, pointRadius: 0, yAxisID: 'y', fill: false },
@@ -536,7 +520,7 @@
                     }
                 }
 
-                // Compute contiguous ranges for summary
+                // Compute contiguous ranges for summary (these ranges may be non-contiguous categories grouped consecutively)
                 const ranges = [];
                 let curCat = segmentCategories[0];
                 let start = 0;
@@ -557,7 +541,6 @@
                 summaryHtml += `</pre>`;
                 summaryDiv.innerHTML = summaryHtml;
             } else {
-                // For non-latency charts clear summary
                 summaryDiv.innerHTML = '';
             }
             
@@ -572,7 +555,6 @@
                     interaction: {mode: 'index', intersect: false},
                     plugins: {
                         legend: { display: true, position: 'top' },
-                        // configure our segment background plugin only for latency charts
                         segmentBackground: {
                             enabled: type === 'ping' && !!segmentColors,
                             segments: segmentColors
@@ -583,36 +565,31 @@
                             title: {display: true, text: 'Time (s)', font: {weight: 'bold'}}, 
                             grid: {display: false},
                             min: 0,
-                            max: Math.max(...labels, 100) // ensure x max is at least number of labels or 100
+                            max: Math.max(...labels, 100)
                         },
-                        y: {title: {display: true, text: 'SNR (dB)', font: {weight: 'bold'}}, position: 'left', grid: {display: false}},
+                        y: {title: {display: true, text: 'RX SNR (dB)', font: {weight: 'bold'}}, position: 'left', grid: {display: false}},
                         y1: {title: {display: true, text: type === 'iperf3' ? 'Throughput (Mbps)' : 'Latency (ms)', font: {weight: 'bold'}}, position: 'right', grid: {display: false}}
                     }
                 }
             });
             
-            chartInstances.push({chart: chart, rawAckMean: ackMean, rawAckStd: ackStd, rawRxMean: rxMean, rawRxStd: rxStd, rawPerfMean: perfMean, rawPerfStd: perfStd});
+            chartInstances.push({chart: chart, rawRxMean: rxMean, rawRxStd: rxStd, rawPerfMean: perfMean, rawPerfStd: perfStd});
             let idx = chartInstances.length - 1;
             
             range.oninput = () => {
                 span.textContent = range.value;
                 let w = parseInt(range.value);
-                let sAckMean = smooth(chartInstances[idx].rawAckMean, w);
-                let sAckStd = smooth(chartInstances[idx].rawAckStd, w);
                 let sRxMean = smooth(chartInstances[idx].rawRxMean, w);
                 let sRxStd = smooth(chartInstances[idx].rawRxStd, w);
                 let sPerfMean = smooth(chartInstances[idx].rawPerfMean, w);
                 let sPerfStd = smooth(chartInstances[idx].rawPerfStd, w);
                 
-                chart.data.datasets[0].data = sAckMean.map((m, i) => m != null ? m + sAckStd[i] : null);
-                chart.data.datasets[1].data = sAckMean;
-                chart.data.datasets[2].data = sAckMean.map((m, i) => m != null ? m - sAckStd[i] : null);
-                chart.data.datasets[3].data = sRxMean.map((m, i) => m != null ? m + sRxStd[i] : null);
-                chart.data.datasets[4].data = sRxMean;
-                chart.data.datasets[5].data = sRxMean.map((m, i) => m != null ? m - sRxStd[i] : null);
-                chart.data.datasets[6].data = sPerfMean.map((m, i) => m != null ? m + sPerfStd[i] : null);
-                chart.data.datasets[7].data = sPerfMean;
-                chart.data.datasets[8].data = sPerfMean.map((m, i) => m != null ? m - sPerfStd[i] : null);
+                chart.data.datasets[0].data = sRxMean.map((m, i) => m != null ? m + sRxStd[i] : null);
+                chart.data.datasets[1].data = sRxMean;
+                chart.data.datasets[2].data = sRxMean.map((m, i) => m != null ? m - sRxStd[i] : null);
+                chart.data.datasets[3].data = sPerfMean.map((m, i) => m != null ? m + sPerfStd[i] : null);
+                chart.data.datasets[4].data = sPerfMean;
+                chart.data.datasets[5].data = sPerfMean.map((m, i) => m != null ? m - sPerfStd[i] : null);
                 
                 chart.update();
             };
