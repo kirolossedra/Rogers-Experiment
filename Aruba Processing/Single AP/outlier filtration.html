@@ -511,7 +511,7 @@
                     } else if (vals.some(v => v > 75)) {
                         segmentCategories[i] = 'RED (>75ms in at least one run)';
                         segmentColors[i] = 'rgba(244,67,54,0.12)'; // red
-                    } else if (vals.some(v => v > 40)) {
+                    } else if (vals.some(v => v > 50)) {
                         segmentCategories[i] = 'YELLOW (>40ms in at least one run)';
                         segmentColors[i] = 'rgba(255,193,7,0.12)'; // yellow
                     } else {
