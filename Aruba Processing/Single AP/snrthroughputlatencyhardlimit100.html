@@ -15,7 +15,7 @@
         input[type="text"], input[type="file"], textarea, select { width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px; margin-bottom: 10px; }
         textarea { min-height: 150px; font-family: monospace; resize: vertical; }
         .options { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin: 15px 0; }
-        button { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 15px 40px; font-size: 16px; font-weight: 600; border-radius: 8px; cursor: pointer; margin: 10px auto; display: block; }
+        button { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 15px 40px; font-size: 16px; font-weight: 600; border-radius: 8px; cursor: pointer; transition: all .18s ease; }
         button:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4); }
         .chart-wrapper { background: #f8f9fa; padding: 20px; border-radius: 10px; margin: 20px 0; }
         .chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px; }
@@ -24,7 +24,7 @@
         .slider { display: flex; align-items: center; gap: 10px; background: white; padding: 8px 15px; border-radius: 8px; }
         .slider input { width: 150px; }
         .slider span { font-weight: 700; color: #667eea; min-width: 30px; text-align: center; }
-        .copy-btn { background: #43e97b; padding: 8px 15px; font-size: 14px; margin: 0; }
+        .copy-btn { background: #43e97b; padding: 8px 15px; font-size: 14px; margin: 0; border-radius: 6px; color: #093; border: none; cursor: pointer; }
         .status { padding: 12px; border-radius: 8px; margin: 10px 0; text-align: center; display: none; }
         .status.show { display: block; }
         .status.error { background: #f8d7da; color: #721c24; }
@@ -35,6 +35,10 @@
         table th, table td { padding: 10px; text-align: left; border-bottom: 1px solid #e0e0e0; }
         table th { background: #667eea; color: white; font-weight: 600; }
         table tr:hover { background: #f8f9fa; }
+        .summary { margin-top: 12px; font-size: 14px; color: #333; }
+        .legend { display:flex; gap:10px; align-items:center; margin-left:10px; }
+        .legend span { display:inline-flex; width:16px; height:12px; border-radius:3px; margin-right:6px; }
+        pre.segments { background: #fff; padding: 10px; border-radius: 8px; max-height: 220px; overflow: auto; font-size: 13px; }
     </style>
 </head>
 <body>
@@ -67,6 +71,38 @@
 
     <script>
         let chartInstances = [];
+
+        // Plugin to draw colored background segments behind charts (used for latency)
+        const segmentBackground = {
+            id: 'segmentBackground',
+            beforeDraw: (chart, args, options) => {
+                // options: { enabled: true, segments: [...colors], alpha: 0.08 }
+                if (!options || !options.enabled || !options.segments) return;
+                const ctx = chart.ctx;
+                const xScale = chart.scales.x;
+                if (!xScale) return;
+                const top = chart.chartArea.top;
+                const bottom = chart.chartArea.bottom;
+                const segments = options.segments;
+                for (let i = 0; i < segments.length; i++) {
+                    const color = segments[i];
+                    if (!color) continue;
+                    // compute left & right pixel for each index (assuming labels are numeric indices)
+                    const left = xScale.getPixelForValue(i - 0.5);
+                    const right = xScale.getPixelForValue(i + 0.5);
+                    // clip drawing area
+                    const drawLeft = Math.max(left, chart.chartArea.left);
+                    const drawRight = Math.min(right, chart.chartArea.right);
+                    if (drawRight <= drawLeft) continue;
+                    ctx.save();
+                    ctx.fillStyle = color;
+                    ctx.fillRect(drawLeft, top, drawRight - drawLeft, bottom - top);
+                    ctx.restore();
+                }
+            }
+        };
+
+        Chart.register(segmentBackground);
 
         document.getElementById('logFile').onchange = async (e) => {
             document.getElementById('logText').value = await e.target.files[0].text();
@@ -338,7 +374,7 @@
             
             // FORCE maxLen to represent max 100 seconds
             // Calculate samples per second and cap at 100s worth
-            let avgSamplesPerRun = allThroughputRuns.map(r => r.perf.length / r.duration);
+            let avgSamplesPerRun = allThroughputRuns.map(r => r.perf.length / (r.duration || 1));
             let avgSampleRate = avgSamplesPerRun.reduce((a,b) => a+b) / avgSamplesPerRun.length;
             let max100sLength = Math.ceil(avgSampleRate * 100);
             
@@ -393,13 +429,16 @@
                 latencyStd[i] = latencyVals.length > 1 ? Math.sqrt(latencyVals.map(v => (v - latencyMean[i])**2).reduce((a,b) => a+b) / latencyVals.length) : 0;
             }
             
-            createChart(`Throughput (${allThroughputRuns.length} runs)`, labels, ackMean, ackStd, rxMean, rxStd, throughputMean, throughputStd, 'iperf3');
-            createChart(`Latency (${allLatencyRuns.length} runs)`, labels, ackMean, ackStd, rxMean, rxStd, latencyMean, latencyStd, 'ping');
+            // Create throughput chart (no per-runNeeded)
+            createChart(`Throughput (${allThroughputRuns.length} runs)`, labels, ackMean, ackStd, rxMean, rxStd, throughputMean, throughputStd, 'iperf3', null);
+            // Create latency chart, pass per-run latency arrays so we can compute colored segments
+            const latencyPerRuns = allLatencyRuns.map(r => r.perf);
+            createChart(`Latency (${allLatencyRuns.length} runs)`, labels, ackMean, ackStd, rxMean, rxStd, latencyMean, latencyStd, 'ping', latencyPerRuns);
             
             status('Analysis complete!', 'success');
         }
 
-        function createChart(name, labels, ackMean, ackStd, rxMean, rxStd, perfMean, perfStd, type) {
+        function createChart(name, labels, ackMean, ackStd, rxMean, rxStd, perfMean, perfStd, type, perRunData) {
             let wrapper = document.createElement('div');
             wrapper.className = 'chart-wrapper';
             
@@ -417,6 +456,18 @@
             let span = slider.querySelector('span');
             controls.appendChild(slider);
             
+            let legend = document.createElement('div');
+            legend.className = 'legend';
+            legend.innerHTML = `
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <span style="background:#4caf50;"></span> Green &nbsp;
+                    <span style="background:#ffc107;"></span> Yellow &nbsp;
+                    <span style="background:#f44336;"></span> Red &nbsp;
+                    <span style="background:#bdbdbd;"></span> No data
+                </div>
+            `;
+            controls.appendChild(legend);
+            
             let copy = document.createElement('button');
             copy.className = 'copy-btn';
             copy.textContent = '📋 Copy';
@@ -427,6 +478,12 @@
             
             let canvas = document.createElement('canvas');
             wrapper.appendChild(canvas);
+
+            // summary container for showing colored segment ranges (text)
+            let summaryDiv = document.createElement('div');
+            summaryDiv.className = 'summary';
+            wrapper.appendChild(summaryDiv);
+
             document.getElementById('charts').appendChild(wrapper);
             
             // Create std bands
@@ -437,35 +494,96 @@
             let perfUpper = perfMean.map((m, i) => m != null ? m + perfStd[i] : null);
             let perfLower = perfMean.map((m, i) => m != null ? m - perfStd[i] : null);
             
-            let chart = new Chart(canvas, {
+            // Datasets: ack band, ack mean, ack lower, rx band/mean/lower, perf band/mean/lower
+            const datasets = [
+                // ACK +σ
+                { label: 'ACK SNR +σ', data: ackUpper, borderColor: 'rgba(102,126,234,0.25)', backgroundColor: 'rgba(102,126,234,0.08)', fill: '+1', tension: 0.4, borderWidth: 1, pointRadius: 0, yAxisID: 'y' },
+                { label: 'ACK SNR Mean', data: ackMean, borderColor: '#667eea', backgroundColor: 'rgba(102,126,234,0.12)', tension: 0.4, borderWidth: 3, pointRadius: 0, yAxisID: 'y', fill: false },
+                { label: 'ACK SNR -σ', data: ackLower, borderColor: 'rgba(102,126,234,0.25)', backgroundColor: 'rgba(102,126,234,0.08)', fill: '-1', tension: 0.4, borderWidth: 1, pointRadius: 0, yAxisID: 'y' },
+
+                // RX +σ
+                { label: 'RX SNR +σ', data: rxUpper, borderColor: 'rgba(240,147,251,0.25)', backgroundColor: 'rgba(240,147,251,0.08)', fill: '+1', tension: 0.4, borderWidth: 1, pointRadius: 0, yAxisID: 'y' },
+                { label: 'RX SNR Mean', data: rxMean, borderColor: '#f093fb', backgroundColor: 'rgba(240,147,251,0.12)', tension: 0.4, borderWidth: 3, pointRadius: 0, yAxisID: 'y', fill: false },
+                { label: 'RX SNR -σ', data: rxLower, borderColor: 'rgba(240,147,251,0.25)', backgroundColor: 'rgba(240,147,251,0.08)', fill: '-1', tension: 0.4, borderWidth: 1, pointRadius: 0, yAxisID: 'y' },
+
+                // Performance +σ
+                { label: (type === 'iperf3' ? 'Throughput' : 'Latency') + ' +σ', data: perfUpper, borderColor: 'rgba(255,107,107,0.25)', backgroundColor: 'rgba(255,107,107,0.08)', fill: '+1', tension: 0.4, borderWidth: 1, pointRadius: 0, yAxisID: 'y1' },
+                { label: (type === 'iperf3' ? 'Throughput' : 'Latency') + ' Mean', data: perfMean, borderColor: '#ff6b6b', backgroundColor: 'rgba(255,107,107,0.12)', tension: 0.4, borderWidth: 3, pointRadius: 0, yAxisID: 'y1', fill: false },
+                { label: (type === 'iperf3' ? 'Throughput' : 'Latency') + ' -σ', data: perfLower, borderColor: 'rgba(255,107,107,0.25)', backgroundColor: 'rgba(255,107,107,0.08)', fill: '-1', tension: 0.4, borderWidth: 1, pointRadius: 0, yAxisID: 'y1' }
+            ];
+            
+            // Build status segments for latency (perRunData)
+            let segmentColors = null;
+            let segmentCategories = null;
+            if (type === 'ping' && Array.isArray(perRunData)) {
+                const maxLen = labels.length;
+                segmentColors = new Array(maxLen);
+                segmentCategories = new Array(maxLen);
+                for (let i = 0; i < maxLen; i++) {
+                    let vals = perRunData.map(r => r[i]).filter(v => v != null);
+                    if (!vals.length) {
+                        segmentCategories[i] = 'No data';
+                        segmentColors[i] = 'rgba(189,189,189,0.06)';
+                    } else if (vals.some(v => v > 75)) {
+                        segmentCategories[i] = 'RED (>75ms in at least one run)';
+                        segmentColors[i] = 'rgba(244,67,54,0.12)'; // red
+                    } else if (vals.some(v => v > 40)) {
+                        segmentCategories[i] = 'YELLOW (>40ms in at least one run)';
+                        segmentColors[i] = 'rgba(255,193,7,0.12)'; // yellow
+                    } else {
+                        segmentCategories[i] = 'GREEN (all runs <40ms)';
+                        segmentColors[i] = 'rgba(76,175,80,0.08)'; // green
+                    }
+                }
+
+                // Compute contiguous ranges for summary
+                const ranges = [];
+                let curCat = segmentCategories[0];
+                let start = 0;
+                for (let i = 1; i <= segmentCategories.length; i++) {
+                    if (i === segmentCategories.length || segmentCategories[i] !== curCat) {
+                        ranges.push({from: start, to: i - 1, category: curCat});
+                        start = i;
+                        curCat = segmentCategories[i];
+                    }
+                }
+
+                // Build summary text
+                let summaryHtml = `<div style="margin-top:8px;"><strong>Latency segment summary:</strong></div>`;
+                summaryHtml += `<pre class="segments">`;
+                ranges.forEach(r => {
+                    summaryHtml += `From ${r.from}s to ${r.to}s: ${r.category}\n`;
+                });
+                summaryHtml += `</pre>`;
+                summaryDiv.innerHTML = summaryHtml;
+            } else {
+                // For non-latency charts clear summary
+                summaryDiv.innerHTML = '';
+            }
+            
+            const chart = new Chart(canvas, {
                 type: 'line',
                 data: {
                     labels: labels,
-                    datasets: [
-                        // ACK SNR bands
-                        {label: 'ACK SNR +σ', data: ackUpper, borderColor: '#667eea40', backgroundColor: '#667eea10', fill: '+1', tension: 0.4, borderWidth: 1, pointRadius: 0, yAxisID: 'y', borderDash: [5,5]},
-                        {label: 'ACK SNR Mean', data: ackMean, borderColor: '#667eea', backgroundColor: '#667eea20', tension: 0.4, borderWidth: 3, pointRadius: 0, yAxisID: 'y', fill: false},
-                        {label: 'ACK SNR -σ', data: ackLower, borderColor: '#667eea40', backgroundColor: '#667eea10', fill: '-1', tension: 0.4, borderWidth: 1, pointRadius: 0, yAxisID: 'y', borderDash: [5,5]},
-                        
-                        // RX SNR bands
-                        {label: 'RX SNR +σ', data: rxUpper, borderColor: '#f093fb40', backgroundColor: '#f093fb10', fill: '+1', tension: 0.4, borderWidth: 1, pointRadius: 0, yAxisID: 'y', borderDash: [5,5]},
-                        {label: 'RX SNR Mean', data: rxMean, borderColor: '#f093fb', backgroundColor: '#f093fb20', tension: 0.4, borderWidth: 3, pointRadius: 0, yAxisID: 'y', fill: false},
-                        {label: 'RX SNR -σ', data: rxLower, borderColor: '#f093fb40', backgroundColor: '#f093fb10', fill: '-1', tension: 0.4, borderWidth: 1, pointRadius: 0, yAxisID: 'y', borderDash: [5,5]},
-                        
-                        // Performance bands
-                        {label: (type === 'iperf3' ? 'Throughput' : 'Latency') + ' +σ', data: perfUpper, borderColor: '#ff6b6b40', backgroundColor: '#ff6b6b10', fill: '+1', tension: 0.4, borderWidth: 1, pointRadius: 0, yAxisID: 'y1', borderDash: [5,5]},
-                        {label: (type === 'iperf3' ? 'Throughput' : 'Latency') + ' Mean', data: perfMean, borderColor: '#ff6b6b', backgroundColor: '#ff6b6b20', tension: 0.4, borderWidth: 3, pointRadius: 0, yAxisID: 'y1', fill: false},
-                        {label: (type === 'iperf3' ? 'Throughput' : 'Latency') + ' -σ', data: perfLower, borderColor: '#ff6b6b40', backgroundColor: '#ff6b6b10', fill: '-1', tension: 0.4, borderWidth: 1, pointRadius: 0, yAxisID: 'y1', borderDash: [5,5]}
-                    ]
+                    datasets: datasets
                 },
                 options: {
                     responsive: true,
                     interaction: {mode: 'index', intersect: false},
+                    plugins: {
+                        legend: { display: true, position: 'top' },
+                        // configure our segment background plugin only for latency charts
+                        segmentBackground: {
+                            enabled: type === 'ping' && !!segmentColors,
+                            segments: segmentColors
+                        }
+                    },
                     scales: {
                         x: {
                             title: {display: true, text: 'Time (s)', font: {weight: 'bold'}}, 
                             grid: {display: false},
-                            max: 100  // FORCE X-AXIS MAX TO 100
+                            min: 0,
+                            max: Math.max(...labels, 100) // ensure x max is at least number of labels or 100
                         },
                         y: {title: {display: true, text: 'SNR (dB)', font: {weight: 'bold'}}, position: 'left', grid: {display: false}},
                         y1: {title: {display: true, text: type === 'iperf3' ? 'Throughput (Mbps)' : 'Latency (ms)', font: {weight: 'bold'}}, position: 'right', grid: {display: false}}
@@ -495,6 +613,7 @@
                 chart.data.datasets[6].data = sPerfMean.map((m, i) => m != null ? m + sPerfStd[i] : null);
                 chart.data.datasets[7].data = sPerfMean;
                 chart.data.datasets[8].data = sPerfMean.map((m, i) => m != null ? m - sPerfStd[i] : null);
+                
                 chart.update();
             };
             
