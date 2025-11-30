@@ -36,7 +36,7 @@
 * [x] Prepare downlink and uplink scripts both with showing retr(retr is already there)
 * [x] Update the commant list to include noise floor logging
 * [ ] Run even the uplink with the 2Gigs switch to see if this makes a difference
-
+* [ ] Make all of them actual timestamp unified instead of the unix one
 
 ### Reminder Tasks 
 * [x] Getting started with 5G Mid-band modem
